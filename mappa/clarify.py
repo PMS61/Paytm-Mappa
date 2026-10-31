@@ -45,6 +45,11 @@ Rules:
   account number or extra confirmation unless it is listed as required). Never ask again for a detail the customer
   already gave, in any language.
 - As soon as every required detail of the category is known, set clarification_needed false and conclude.
+- The customer may speak Hindi (Devanagari), Hinglish or English; understand all of them. Fill details in English with
+  these exact formats: amount, refund_amount, offline_days and account_changed_hours_ago are numbers (convert number
+  words such as "तीन" / "teen" to 3); refund_kind is exactly "new request" (they want to refund someone) or
+  "not received" (a refund was made but has not arrived); account_changed is true or false. Write clarifications and
+  the conclusion in English.
 - An amount the customer mentions is details.amount. For a refund, the refund amount is that same amount unless the
   customer says otherwise; never ask for it separately.
 - When you conclude, set clarification_needed false, give a conclusion, and cite the policy ids you relied on
@@ -287,6 +292,37 @@ ACC_NO = re.compile(r"(account|khata|bank)\b.{0,30}\b(change|changed|badla|badal
 ACC_YES = re.compile(r"\b(naya|new|dusra|another)\b.{0,15}\b(account|khata)\b.{0,25}\b(add|added|kiya|joda|lagaya)\b"
                      r"|(account|khata)\b.{0,20}\b(change|badla|badal)\b\s*(kiya|kar diya|ho gaya|hai)\b", re.I)
 
+# Devanagari / Hinglish forms the shared regexes in clarity.py do not cover
+NUM_WORDS = {"ek": 1, "एक": 1, "do": 2, "दो": 2, "teen": 3, "tin": 3, "तीन": 3, "char": 4, "chaar": 4, "चार": 4,
+             "paanch": 5, "panch": 5, "पांच": 5, "पाँच": 5, "chhe": 6, "che": 6, "छह": 6, "छः": 6, "saat": 7, "सात": 7,
+             "aath": 8, "आठ": 8, "nau": 9, "नौ": 9, "das": 10, "दस": 10, "one": 1, "two": 2, "three": 3, "four": 4,
+             "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10}
+DAYS_WORD = re.compile(r"(\d{1,3}|" + "|".join(sorted(map(re.escape, NUM_WORDS), key=len, reverse=True)) +
+                       r")\s*(din|dino|days?|दिन|दिनों)", re.I)
+WEEK = re.compile(r"(ek |a |one |एक )?(hafte|hafta|week|हफ्ते|हफ़्ते|सप्ताह)", re.I)
+REFUND_NEW_HI = re.compile(r"(रिफंड|रिफ़ंड|refund).{0,20}(करना|कर दो|करो|करें|चाहिए|देना|दे दो|वापस)", re.I)
+REFUND_NOT_RECEIVED_HI = re.compile(r"(रिफंड|रिफ़ंड|refund).{0,30}(नहीं|नही).{0,10}(मिला|आया|पहुंचा|पहुँचा)"
+                                    r"|(नहीं|नही).{0,10}(मिला|आया|पहुंचा|पहुँचा).{0,30}(रिफंड|रिफ़ंड|refund)", re.I)
+ACC_NO_HI = re.compile(r"(अकाउंट|खाता|बैंक).{0,30}(नहीं|नही).{0,10}(बदला|बदल|चेंज|जोड़ा|जोड़ा)"
+                       r"|(नहीं|नही).{0,25}(बदला|बदल|चेंज)|(वही|same).{0,5}(अकाउंट|खाता)", re.I)
+ACC_YES_HI = re.compile(r"(नया|नए|नई|दूसरा).{0,10}(अकाउंट|खाता).{0,25}(जोड़ा|जोड़ा|ऐड|लगाया|डाला)"
+                        r"|(अकाउंट|खाता).{0,15}(बदला|बदल दिया|चेंज किया)", re.I)
+
+
+def _recover_hindi(d: Details, text: str, category: str) -> None:
+    if d.offline_days is None:
+        if m := DAYS_WORD.search(text):
+            w = m.group(1).lower()
+            d.offline_days = float(w) if w.isdigit() else float(NUM_WORDS.get(w, NUM_WORDS.get(m.group(1), 0)) or 0) or None
+        elif WEEK.search(text):
+            d.offline_days = 7.0
+    if category == "refund" and d.refund_kind is None:
+        d.refund_kind = ("not received" if REFUND_NOT_RECEIVED_HI.search(text)
+                         else "new request" if REFUND_NEW_HI.search(text) else None)
+    if d.account_changed is None:
+        d.account_changed = False if ACC_NO_HI.search(text) else True if ACC_YES_HI.search(text) else None  # negation first
+
+
 ASK = {  # one plain question per required detail (taxonomy.REQUIRED)
     "amount": "How much money is this about (the amount in rupees)?",
     "bank_name": "Which bank account should the money have reached (bank name)?",
@@ -312,6 +348,7 @@ def _required_gate(s: ClaritySession, reply: dict, scenario: str) -> None:
         d.refund_kind = None
     if d.account_changed is None:
         d.account_changed = True if ACC_YES.search(scenario) else False if ACC_NO.search(scenario) else None
+    _recover_hindi(d, scenario, cat)
     t["details"] = {**t.get("details", {}), **d.model_dump(exclude_none=True)}
     s.draft["details"] = dict(t["details"])
     miss = taxonomy.missing(cat, d)

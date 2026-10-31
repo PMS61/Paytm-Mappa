@@ -330,3 +330,19 @@ def test_clarity_step_handles_devanagari_input():
     out = clarify.step(s.id, "नमस्ते मेरा सेटलमेंट नहीं आया", llm=FakeLLM(ASKING))
     assert out["status"] in ("needs_clarification", "done", "escalate")
 
+
+
+@pytest.mark.parametrize("text, category, expected", [
+    ("तीन दिन से", "device", {"offline_days": 3.0}),
+    ("teen din se", "device", {"offline_days": 3.0}),
+    ("ek hafte se", "device", {"offline_days": 7.0}),
+    ("ग्राहक को 450 रुपये का रिफंड करना है", "refund", {"refund_kind": "new request"}),
+    ("रिफंड अभी तक नहीं मिला", "refund", {"refund_kind": "not received"}),
+    ("नहीं, मैंने अकाउंट नहीं बदला", "settlement", {"account_changed": False}),
+    ("मैंने नया अकाउंट जोड़ा", "settlement", {"account_changed": True}),
+])
+def test_hindi_details_are_recovered(text, category, expected):
+    from mappa.schema import Details
+    d = Details()
+    clarify._recover_hindi(d, text, category)
+    assert d.model_dump(exclude_none=True) == expected
