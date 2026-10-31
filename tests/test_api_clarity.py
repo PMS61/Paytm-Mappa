@@ -93,7 +93,8 @@ def test_cap_escalation_over_http(monkeypatch):
     client.post("/api/clarity", json={"id": sid, "information": "one"})
     r = client.post("/api/clarity", json={"id": sid, "information": "two"})
     assert r.status_code == 200
-    assert r.json() == {"id": sid, "status": "escalate", "done": False, "reason": "too many clarity calls"}
+    assert r.json() == {"id": sid, "status": "escalate", "done": False, "reason": "too many clarity calls",
+                        "need_human": True, "need_human_reason": "too many clarity calls", "mcp": None}
 
 
 def test_critical_escalation_over_http(monkeypatch):

@@ -116,6 +116,7 @@ class Clarity(BaseModel):
     policy_holds: list[dict]        # human-only clauses whose trigger matched
     jev_input: dict                 # the exact state Jev scored, kept so feedback can retrain on it
     decision: Decision
+    mcp: dict | None = None         # capability.check: can the Paytm MCP tools solve this scenario? (need_human, reason)
     suggestion: dict | None = None  # HUMAN tickets: what to do, from similar past tickets that were resolved well
 
 
@@ -180,3 +181,4 @@ class ClaritySession(BaseModel):
     clarifications: list[str] = []
     ticket_id: str | None = None
     escalation_reason: str | None = None   # set when status is escalated
+    mcp: dict | None = None                # last capability.check of the scenario (can the MCP tools solve it?)

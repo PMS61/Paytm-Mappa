@@ -105,7 +105,8 @@ def test_cap_escalates_without_an_llm_call(monkeypatch):
     clarify.step(s.id, "two", llm=llm)
     assert len(llm.messages) == 2
     out = clarify.step(s.id, "three", llm=llm)
-    assert out == {"id": s.id, "status": "escalate", "done": False, "reason": "too many clarity calls"}
+    assert out == {"id": s.id, "status": "escalate", "done": False, "reason": "too many clarity calls",
+                   "need_human": True, "need_human_reason": "too many clarity calls", "mcp": None}
     assert len(llm.messages) == 2
     assert sessions.get(s.id).status == "escalated"
 
@@ -195,7 +196,8 @@ def test_amount_at_ceiling_escalates(env):
 
 def test_amount_just_below_ceiling_is_not_escalated(env):
     s = _session()
-    below = dict(DONE, ticket=dict(DONE["ticket"], details={"amount": 49999, "refund_kind": "new request"}))
+    below = dict(DONE, ticket=dict(DONE["ticket"], details={"amount": 49999, "refund_kind": "new request",
+                                                                   "txn_id": "T5512"}))
     out = clarify.step(s.id, "refund 49999", llm=FakeLLM(below))
     assert out["status"] == "done" and len(env) == 1
 

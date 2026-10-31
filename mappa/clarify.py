@@ -5,6 +5,12 @@
 
 The LLM never decides the route; a concluded session goes through pipeline.raise_ticket (Jev decides as usual).
 Critical scenarios escalate, and deterministic checks win over the LLM's own `critical` flag.
+
+MCP capability (capability.check) runs on the LLM's draft ticket every turn: if the scenario cannot be solved with the
+Paytm MCP tools at all, the session escalates; if the tools need a detail nobody gave yet (e.g. a transaction ID), the
+session asks for it instead of concluding. Every response carries `need_human` (+ `need_human_reason`), decided here,
+in the clarity layer: true on escalate, and on done when the MCP tools cannot solve the concluded scenario; false
+otherwise. Jev runs only afterwards, on the raised ticket.
 Concurrency: step() holds a per-session lock. This is single-process only (threading locks); a multi-worker
 deployment needs a lock in the store.
 """
@@ -15,7 +21,7 @@ import threading
 
 from pydantic import ValidationError
 
-from . import clarity, pipeline, policies, sarvam, sessions, store, taxonomy, textguard
+from . import autopilot, capability, clarity, pipeline, policies, sarvam, sessions, store, taxonomy, textguard
 from .schema import ClarityEntry, ClaritySession, Details, TicketIn, Turn
 
 DEFAULT_MAX_CALLS = 5
@@ -55,8 +61,15 @@ def max_calls() -> int:
         return DEFAULT_MAX_CALLS
 
 
+def _automation_needs(category: str) -> list[str]:
+    """Details the MCP playbooks of this category need beyond the category's required ones."""
+    codes = {a.code for _, _, _, a in taxonomy.SCENARIOS[category]}
+    needs = {k for code in codes if code in autopilot.PLAYBOOKS for k in autopilot.PLAYBOOKS[code][2]}
+    return sorted(needs - set(taxonomy.REQUIRED[category]))
+
+
 def _categories() -> str:
-    return "\n".join(f"- {c}: {desc}. Required details: {', '.join(taxonomy.REQUIRED[c]) or 'none'}"
+    return "\n".join(f"- {c}: {desc}. Required details: {', '.join(taxonomy.REQUIRED[c] + _automation_needs(c)) or 'none'}"
                      for c, desc in taxonomy.CATEGORIES.items())
 
 
@@ -125,19 +138,23 @@ def _amounts(ticket: dict, scenario: str) -> list[float]:
 def _escalate(s: ClaritySession, reason: str) -> dict:
     s.status, s.escalation_reason = "escalated", reason
     sessions.save(s)
-    return {"id": s.id, "status": "escalate", "done": False, "reason": reason}
+    return _escalate_saved(s)
 
 
 def _done(s: ClaritySession) -> dict:
     t = store.get(s.ticket_id) if s.ticket_id else None
+    mcp = s.mcp
+    human = mcp is None or mcp["need_human"]
+    why = "scenario not identified: cannot check the MCP tools" if mcp is None else mcp["reason"] if human else None
     return {"id": s.id, "status": "done", "done": True, "clarifications": [],
             "message": "no clarification is needed", "conclusion": s.conclusion, "confidence": s.confidence,
             "ticket_id": s.ticket_id, "ticket_status": t.status if t else None,
-            "route": t.clarity.decision.route if t and t.clarity else None}
+            "route": t.clarity.decision.route if t and t.clarity else None,
+            "need_human": human, "need_human_reason": why, "mcp": mcp}
 
 
-def _ticket_in(s: ClaritySession, ticket: dict) -> TicketIn:
-    """Build the TicketIn for pipeline.raise_ticket; invalid detail values are dropped one by one."""
+def _details(ticket: dict) -> Details:
+    """The draft's details; invalid values are dropped one by one."""
     details = {}
     raw = ticket.get("details")
     for k, v in (raw.items() if isinstance(raw, dict) else []):
@@ -149,6 +166,11 @@ def _ticket_in(s: ClaritySession, ticket: dict) -> TicketIn:
                 details[k] = v
             except ValidationError:
                 pass
+    return Details(**details)
+
+
+def _ticket_in(s: ClaritySession, ticket: dict) -> TicketIn:
+    """Build the TicketIn for pipeline.raise_ticket."""
     cat = ticket.get("category")
     cat = cat if isinstance(cat, str) else None
     subj = ticket.get("subject")
@@ -159,7 +181,7 @@ def _ticket_in(s: ClaritySession, ticket: dict) -> TicketIn:
         category=cat if cat in taxonomy.CATEGORIES else None,
         subject=subj[:240] if isinstance(subj, str) and len(subj.strip()) >= 3 else f"Clarity session {s.id}",
         ask=ask[:240] if isinstance(ask, str) and ask.strip() else None,
-        details=Details(**details),
+        details=_details(ticket),
         transcript=[Turn(speaker="customer", text=e.text, at=e.at) for e in s.entries],
         caller_claims=claims,
         human_requested=ticket.get("human_requested") is True,
@@ -210,7 +232,18 @@ def _step(session_id: str, information: str, llm) -> dict:
     if reasons:
         return _escalate(s, "; ".join(reasons))
 
-    if not reply["clarification_needed"] and reply["conclusion"]:
+    # MCP capability: can the Paytm tools solve this scenario at all, and do their calls have what they need?
+    mcp = _draft_check(reply["ticket"], scenario)
+    if mcp is not None:
+        s.mcp = mcp
+        if mcp["need_human"]:
+            return _escalate(s, f"not solvable with the Paytm MCP tools: {mcp['reason']}")
+    concluding = not reply["clarification_needed"] and reply["conclusion"]
+    if concluding and mcp is not None and mcp["details_missing"]:
+        reply["clarification_needed"], concluding = True, False  # the LLM concluded, but the MCP calls cannot run yet
+        reply["clarifications"] = capability.questions(mcp["details_missing"]) + reply["clarifications"]
+
+    if concluding:
         s.conclusion, s.confidence = reply["conclusion"], reply["confidence"]
         try:
             body = _ticket_in(s, reply["ticket"])
@@ -226,8 +259,21 @@ def _step(session_id: str, information: str, llm) -> dict:
     s.clarifications = reply["clarifications"] or [GENERIC_QUESTION]
     sessions.save(s)
     return {"id": s.id, "status": "needs_clarification", "done": False, "clarifications": s.clarifications,
-            "calls": s.calls, "calls_left": max(0, max_calls() - s.calls)}
+            "calls": s.calls, "calls_left": max(0, max_calls() - s.calls),
+            "need_human": False, "need_human_reason": None, "mcp": mcp}
 
 
 def _escalate_saved(s: ClaritySession) -> dict:
-    return {"id": s.id, "status": "escalate", "done": False, "reason": s.escalation_reason or "escalated"}
+    reason = s.escalation_reason or "escalated"
+    return {"id": s.id, "status": "escalate", "done": False, "reason": reason,
+            "need_human": True, "need_human_reason": reason, "mcp": s.mcp}
+
+
+def _draft_check(ticket: dict, scenario: str) -> dict | None:
+    """capability.check on the LLM's draft ticket; None while the category is still unknown."""
+    cat = ticket.get("category")
+    if cat not in taxonomy.CATEGORIES:
+        return None
+    details = _details(ticket)
+    key, title, action = taxonomy.scenario_for(cat, details, scenario)
+    return capability.check(action.code, details) | {"category": cat, "scenario": key, "scenario_title": title}

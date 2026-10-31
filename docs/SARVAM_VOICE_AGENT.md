@@ -185,7 +185,12 @@ Every reply has `id` and `status`:
 {"id": "CLR-1a2b3c4d", "detail": "clarity LLM unavailable: ..."}
 ```
 
-**Save reply into variables:** `status` → `clarity_status`, `ticket_id` → `ticket_id`, `reason` → `escalation_reason`.
+**Save reply into variables:** `status` → `clarity_status`, `ticket_id` → `ticket_id`, `reason` → `escalation_reason`,
+`need_human` → `need_human`.
+
+**Redirect on `need_human`.** It is decided by the clarity layer: `true` on every `escalate` and on a `done` whose
+scenario the Paytm MCP tools cannot solve, `false` while clarifying or when they can. Transfer to a human whenever it is
+`true` (see README → "`need_human`: the one field to redirect on").
 
 **Response template** (what the agent sees after the call; type `@` to insert fields):
 

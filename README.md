@@ -152,7 +152,36 @@ POST /api/clarity {id, information} ──► clarity LLM (Sarvam) reads the sce
         ├─ unclear          ──► needs_clarification  (ask the customer the questions, then call again)
         ├─ critical         ──► escalate             (human takes over; reason given)
         ├─ call cap reached ──► escalate             (reason "too many clarity calls")
+        ├─ not MCP-solvable ──► escalate             (no playbook, or the Paytm MCP server lacks a tool it needs)
+        ├─ MCP detail gap   ──► needs_clarification  (the tools need e.g. a transaction ID: we ask for it)
         └─ clear            ──► done                 (conclusion saved, ticket raised: clarity.run → Jev → autopilot / human queue)
+```
+
+### `need_human`: the one field to redirect on
+
+Every clarity response carries `need_human` (bool) and `need_human_reason` (string or null), plus `mcp` (the
+capability check below, or null while the category is unknown).
+
+| status | need_human |
+|---|---|
+| `needs_clarification` | `false`: keep the customer with the bot and ask the questions |
+| `escalate` | `true`: hand over to a human now |
+| `done` | `false` if the MCP tools can solve the concluded scenario; `true` if not, or if no category was identified |
+
+`need_human` is decided here, in the clarity layer, during the call / chat. Jev runs only afterwards, on the raised
+ticket; its route (`route`, `ticket_status` on `done`) is reported for information and does not change `need_human`.
+
+**MCP capability check** (`mappa/capability.py`) runs on the LLM's draft ticket every turn: the scenario's action item
+must have an autopilot playbook, every MCP tool that playbook may call must be served by the Paytm actions server
+right now (live `tools/list`), and the details its tool calls need must be present. No playbook, a missing tool, or the
+server being down means `need_human: true`. Only a missing detail means "ask for it". Each playbook declares its tools
+and details in `autopilot.PLAYBOOKS`. `clarity.run` records the same check on every ticket (`clarity.mcp`) for support.
+
+```json
+"mcp": {"action": "TRACE_REFUND", "playbook": true, "automatable": true, "solvable": false, "need_human": false,
+        "tools_required": ["get_refund", "get_transaction", "initiate_refund", "send_sms"], "tools_missing": [],
+        "details_missing": ["txn_id"], "server": "paytm-actions (dummy)", "reason": "needs txn_id for the MCP calls",
+        "category": "refund", "scenario": "refund_not_received", "scenario_title": "Customer has not received a refund"}
 ```
 
 Each call adds the new information to the session, so the LLM always sees the whole scenario so far. A `done` or
@@ -191,7 +220,8 @@ curl -s localhost:8000/api/clarity/CLR-1a2b3c4d
 
 ```json
 {"id": "CLR-1a2b3c4d", "status": "needs_clarification", "done": false,
- "clarifications": ["Which transaction ID is this refund for?"], "calls": 1, "calls_left": 4}
+ "clarifications": ["What is the transaction ID (or UTR / RRN) of the payment?"], "calls": 1, "calls_left": 4,
+ "need_human": false, "need_human_reason": null, "mcp": {"solvable": false, "details_missing": ["txn_id"], "...": "..."}}
 ```
 
 **done** (no clarification needed; the ticket is in the pipeline, `route` is what Jev decided):
@@ -199,14 +229,18 @@ curl -s localhost:8000/api/clarity/CLR-1a2b3c4d
 ```json
 {"id": "CLR-1a2b3c4d", "status": "done", "done": true, "clarifications": [],
  "message": "no clarification is needed", "conclusion": "Refund approved under P-REF-01", "confidence": 0.9,
- "ticket_id": "TKT-000012", "ticket_status": "closed", "route": "AI"}
+ "ticket_id": "TKT-000012", "ticket_status": "closed", "route": "AI",
+ "need_human": false, "need_human_reason": null, "mcp": {"solvable": true, "...": "..."}}
 ```
 
 **escalate** (cap reached, critical, or a deterministic check fired):
 
 ```json
-{"id": "CLR-1a2b3c4d", "status": "escalate", "done": false, "reason": "too many clarity calls"}
-{"id": "CLR-1a2b3c4d", "status": "escalate", "done": false, "reason": "policy hold P-KYC-05"}
+{"id": "CLR-1a2b3c4d", "status": "escalate", "done": false, "reason": "too many clarity calls",
+ "need_human": true, "need_human_reason": "too many clarity calls", "mcp": null}
+{"id": "CLR-1a2b3c4d", "status": "escalate", "done": false,
+ "reason": "not solvable with the Paytm MCP tools: no MCP playbook for TRACE_PAYMENT",
+ "need_human": true, "need_human_reason": "not solvable with the Paytm MCP tools: no MCP playbook for TRACE_PAYMENT", "mcp": {"...": "..."}}
 ```
 
 **errors**: `404` unknown session (`{"id": "CLR-…", "detail": "no clarity session CLR-…"}`), `502` clarity LLM

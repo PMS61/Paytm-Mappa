@@ -48,10 +48,20 @@ class MCPClient:
         self.server = info["serverInfo"]["name"]
         self.tools = {t["name"]: t for t in self._rpc("tools/list")["tools"]}
 
+    def _ready(self):
+        if self.p is None or self.p.poll() is not None:
+            self._start()
+
+    def list_tools(self) -> dict:
+        """The tools the actions server serves right now (MCP tools/list), by name."""
+        with self.lock:
+            self._ready()
+            self.tools = {t["name"]: t for t in self._rpc("tools/list")["tools"]}
+            return self.tools
+
     def call(self, name, args):
         with self.lock:
-            if self.p is None or self.p.poll() is not None:
-                self._start()
+            self._ready()
             r = self._rpc("tools/call", {"name": name, "arguments": args})
         if r.get("isError"):
             raise RuntimeError(r["content"][0]["text"])
@@ -167,13 +177,20 @@ def _kyc(r: Run):
     return r.sms(f"{reason}Please upload {doc} using the link in the Paytm app.")
 
 
+SETTLE = ["get_settlement", "get_bank_accounts", "retry_settlement", "send_sms"]
+REFUND = ["get_refund", "get_transaction", "initiate_refund", "send_sms"]
+DEVICE = ["run_device_diagnostics", "raise_device_replacement", "reprovision_sim", "push_firmware", "send_sms"]
+KYC = ["get_kyc_status", "send_kyc_upload_link", "send_sms"]
+
+# action code -> (playbook, MCP tools it may call, ticket details its tool calls need)
 PLAYBOOKS = {
-    "TRACE_AND_RETRY_SETTLEMENT": lambda r: _settle(r, check_new_account=False),
-    "VERIFY_ACCOUNT_THEN_SETTLE": lambda r: _settle(r, check_new_account=True),
-    "TRACE_REFUND": _trace_refund,
-    "INITIATE_REFUND": _refund,
-    "DIAGNOSE_AUDIO": _device, "DIAGNOSE_CONNECTIVITY": _device, "DIAGNOSE_DEVICE": _device,
-    "REQUEST_KYC_DOCUMENT": _kyc, "REVIEW_KYC_REJECTION": _kyc,
+    "TRACE_AND_RETRY_SETTLEMENT": (lambda r: _settle(r, check_new_account=False), SETTLE, []),
+    "VERIFY_ACCOUNT_THEN_SETTLE": (lambda r: _settle(r, check_new_account=True), SETTLE + ["get_security_events"], []),
+    "TRACE_REFUND": (_trace_refund, REFUND, ["txn_id"]),
+    "INITIATE_REFUND": (_refund, REFUND, ["txn_id"]),
+    "DIAGNOSE_AUDIO": (_device, DEVICE, []), "DIAGNOSE_CONNECTIVITY": (_device, DEVICE, []),
+    "DIAGNOSE_DEVICE": (_device, DEVICE, []),
+    "REQUEST_KYC_DOCUMENT": (_kyc, KYC, []), "REVIEW_KYC_REJECTION": (_kyc, KYC, []),
 }
 
 
@@ -184,7 +201,7 @@ def run(ticket) -> dict:
     try:
         if pb is None:
             raise Handoff(f"no playbook for {c.action.code}")
-        result, outcome = pb(r), "resolved"
+        result, outcome = pb[0](r), "resolved"
     except Handoff as h:
         result, outcome = str(h), "handoff"
     writes = [x["tool"] for x in r.log if CLIENT.tools.get(x["tool"], {}).get("description", "").startswith("[write]")]

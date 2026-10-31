@@ -8,6 +8,7 @@
     5 missing  required details for the category that are still empty
     6 signals  text guard on every customer turn, human-request pattern
     7 policies ALPHA retrieval of the clauses that govern this ticket + human-only clauses whose trigger matched
+    7b mcp     capability.check recorded on the ticket (for chat / call it already decided need_human in clarify.py)
     8 decision Jev: hard rules, policy holds, feedback revocations, P(ai) ≥ λ̂  ->  AI or HUMAN
     9 suggest  HUMAN only: what similar, well-resolved past tickets did (case memory), else the playbook
     status     needs_info (details missing) | ai_queue | human_queue
@@ -17,7 +18,7 @@ Same ticket in, same structure out.
 
 import re
 
-from . import feedback, jev, memory, policies, taxonomy
+from . import capability, feedback, jev, memory, policies, taxonomy
 from .schema import Clarity, Decision, Details, Event, Signals, Ticket, TicketIn, now
 from .textguard import HUMAN_ASK, guard_hits, sanitise
 
@@ -97,13 +98,14 @@ def run(t: Ticket, secret_removed: bool = False, pii: int = 0) -> Ticket:
     holds = policies.triggered(full, category)
 
     view = jev_view(category)
+    mcp = capability.check(action.code, details)  # recorded for support; the call/chat decision was made in clarify.py
     d = jev.decide(view, guard_hits=hits, money_moving=action.money_moving, policy_hits=holds, scenario=scenario,
                    learned=feedback.state())
     t.clarity = Clarity(customer_text=text, category=category, category_source=source, scenario=scenario,
                         scenario_title=title, action=action, details=details, details_recovered=recovered,
                         details_missing=miss, policies=cited, policy_holds=holds, jev_input=view,
                         signals=Signals(guard_hits=hits, secret_removed=secret_removed, pii_redacted=pii, human_requested=human),
-                        decision=Decision(**d))
+                        decision=Decision(**d), mcp=mcp)
     if d["route"] == "HUMAN":
         t.clarity.suggestion = memory.suggest(t)
     t.status = "needs_info" if miss else "ai_queue" if d["route"] == "AI" else "human_queue"
