@@ -34,3 +34,13 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# python
+__pycache__/
+.venv/
+*.egg-info/
+# local ticket store and trained model (rebuilt by `python -m mappa.train_jev`)
+data/tickets.json
+data/feedback.jsonl
+data/learning.json
+models/

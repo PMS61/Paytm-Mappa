@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Support Desk</title>
+<link rel="stylesheet" href="/static/base.css">
+</head>
+<body>
+<header><b>Support desk</b><nav><a href="#" data-tab="queue">Queue</a><a href="#" data-tab="review">Review</a><a href="#" data-tab="log">Log</a><a href="/">Customer portal</a></nav></header>
+<main>
+<section id="queue">
+  <div class="row"><label>Status<select id="st"><option value="">All</option>
+    <option>needs_info</option><option>human_queue</option><option>ai_queue</option><option>in_progress</option><option>resolved</option><option>closed</option></select></label>
+    <label>Route<select id="rt"><option value="">All</option><option>AI</option><option>HUMAN</option></select></label></div>
+  <div class="grid2"><div id="list"></div><div id="detail" class="mute">Select a ticket.</div></div>
+</section>
+<section id="log" hidden></section>
+</main>
+<script src="/static/common.js"></script>
+<script>
+let TAB = "queue", SEL = null;
+const $ = id => document.getElementById(id);
+
+async function loadList() {
+  const q = TAB === "review" ? "review=true" : `status=${$("st").value}&route=${$("rt").value}`;
+  const ts = await api(`/api/tickets?${q}`);
+  $("list").innerHTML = ts.length ? `<table><tr><th>Ticket</th><th>Scenario</th><th>Route</th><th>Status</th></tr>${ts.map(t => `
+    <tr class="click ${t.id === SEL ? "sel" : ""}" data-id="${t.id}"><td>${t.id}<div class="mute">${esc(t.channel)} · ${when(t.created_at)}</div></td>
+    <td>${esc(t.clarity?.scenario_title)}<div class="mute">${esc(t.subject)}</div></td>
+    <td class="${t.clarity?.decision.route}">${t.clarity?.decision.route || ""}${t.autopilot ? `<div class="mute">auto: ${t.autopilot.outcome}</div>` : ""}</td>
+    <td>${t.status.replace("_", " ")}${t.feedback ? `<div class="mute">${t.feedback.verdict.replace(/_/g, " ")}</div>` : ""}</td></tr>`).join("")}</table>`
+    : `<p class="mute">${TAB === "review" ? "Nothing waiting for review." : "No tickets."}</p>`;
+  for (const tr of document.querySelectorAll("tr.click")) tr.onclick = () => { SEL = tr.dataset.id; loadList(); show(SEL); };
+}
+
+const kv = o => `<table>${Object.entries(o).filter(([, v]) => v !== null && v !== "" && !(Array.isArray(v) && !v.length))
+  .map(([k, v]) => `<tr><th>${esc(k.replace(/_/g, " "))}</th><td>${esc(typeof v === "object" ? JSON.stringify(v) : v)}</td></tr>`).join("")}</table>`;
+
+async function show(id) {
+  const t = await api(`/api/tickets/${id}`), c = t.clarity, d = c.decision, a = t.autopilot;
+  const answers = Object.entries(d.answers).map(([k, x]) => `<tr><th>${k}</th><td>${esc(typeof x.answer === "number" ? x.answer.toFixed(2) : x.answer)}</td>
+    <td class="mute">${esc(Object.entries(x.probabilities).map(([o, p]) => `${o} ${p.toFixed(2)}`).join(" · "))}</td></tr>`).join("");
+  const s = c.suggestion;
+  $("detail").className = "";
+  $("detail").innerHTML = `<h2>${t.id} <span class="tag">${t.status.replace("_", " ")}</span></h2>
+    <p><b>${esc(t.subject)}</b><br>${esc(t.raised_by.name)} (${t.raised_by.role}) · ${esc(t.raised_by.phone)} · via ${t.channel}</p>
+    ${t.description ? `<p>${esc(t.description)}</p>` : ""}
+    ${t.transcript.length ? `<h3>Transcript</h3><pre>${t.transcript.map(x => `${x.speaker}: ${esc(x.text)}`).join("\n")}</pre>` : ""}
+    <h3>Decision: <span class="${d.route}">${d.route}</span></h3>
+    <p>${esc(d.why)}</p>${d.reasons.length > 1 ? `<ul>${d.reasons.slice(1).map(r => `<li>${esc(r)}</li>`).join("")}</ul>` : ""}
+    <p class="mute">λ̂ ${d.lam.toFixed(3)} · α ${d.alpha} · ${esc(d.model)} · ${d.latency_ms} ms</p>
+    <table>${answers}</table>
+    ${a ? `<h3>Autopilot: ${a.outcome}</h3><p>${esc(a.summary)}</p>
+      <table><tr><th>Tool (MCP: ${esc(a.server)})</th><th>Why</th><th>Result</th></tr>${a.log.map(x => `<tr><td>${x.tool}<div class="mute">${esc(JSON.stringify(x.args))}</div></td>
+      <td>${esc(x.why)}</td><td class="mute">${esc(JSON.stringify(x.result))}</td></tr>`).join("")}</table>` : ""}
+    ${s ? `<h3>Suggestion <span class="mute">(${esc(s.basis)})</span></h3><ol>${s.do.map(x => `<li>${esc(x)}</li>`).join("")}</ol>
+      ${s.similar.length ? `<p class="mute">From ${s.similar.map(x => `${x.ticket_id} (sim ${x.similarity})`).join(", ")}</p>` : ""}` : ""}
+    <h3>Clarity</h3>
+    ${kv({category: `${c.category} (${c.category_source})`, scenario: c.scenario, action: `${c.action.code}: ${c.action.summary}`,
+      money_moving: c.action.money_moving, missing: c.details_missing, recovered_from_text: c.details_recovered,
+      guard_hits: c.signals.guard_hits, secret_removed: c.signals.secret_removed || null, pii_redacted: c.signals.pii_redacted || null})}
+    <h3>Details</h3>${kv(c.details)}
+    <h3>Policies</h3>${[...c.policy_holds.map(p => ({...p, hold: true})), ...c.policies].map(p => `<p><b>${p.id}</b> ${esc(p.title)}
+      ${p.hold ? '<span class="tag HUMAN">holds for a human</span>' : ""}<br><span class="mute">${esc(p.text)}</span></p>`).join("")}
+    ${t.resolution ? `<h3>Resolution</h3><p>${esc(t.resolution)}</p>` : ""}
+    <h3>Update</h3>
+    <form id="upd"><label>Resolution (what was done)<textarea name="resolution" rows="2"></textarea></label>
+      <div class="row"><label>Status<select name="status"><option value="">(unchanged)</option><option>in_progress</option><option>resolved</option><option>closed</option></select></label>
+      <label>Note<input name="note"></label></div><button>Save</button> <span class="err" id="uerr"></span></form>
+    ${["resolved", "closed"].includes(t.status) && !t.feedback ? `
+    <h3>Review: was the route right?</h3>
+    <form id="fb">
+      <label class="check"><input type="radio" name="verdict" value="correct" required> Correct: ${d.route === "AI" ? "AI was enough" : "it needed a human"}</label>
+      ${d.route === "AI" ? `<label class="check"><input type="radio" name="verdict" value="needed_human"> Wrong: it needed a human</label>`
+        : `<label class="check"><input type="radio" name="verdict" value="ai_could_resolve"> Wrong: AI could have resolved it</label>`}
+      <label class="check"><input type="checkbox" name="worked" checked> The resolution fixed the customer's problem</label>
+      <label>Note<input name="note"></label><button>Submit feedback</button> <span class="err" id="ferr"></span></form>` : ""}
+    ${t.feedback ? `<h3>Feedback</h3><p>${t.feedback.verdict.replace(/_/g, " ")} · resolution ${t.feedback.resolution_worked ? "worked" : "did not work"} ${esc(t.feedback.note || "")}</p>` : ""}
+    <h3>History</h3><table>${t.history.map(h => `<tr><td class="mute">${when(h.at)}</td><td>${h.by}</td><td>${h.status}</td><td>${esc(h.note)}</td></tr>`).join("")}</table>`;
+  $("upd").onsubmit = async e => {
+    e.preventDefault();
+    const f = e.target;
+    try {
+      await api(`/api/tickets/${id}`, "PATCH", {by: "support", status: f.status.value || null, resolution: f.resolution.value || null, note: f.note.value || null});
+      loadList(); show(id);
+    } catch (x) { $("uerr").textContent = x.message; }
+  };
+  if ($("fb")) $("fb").onsubmit = async e => {
+    e.preventDefault();
+    const f = e.target;
+    try {
+      await api(`/api/tickets/${id}/feedback`, "POST", {verdict: f.verdict.value, resolution_worked: f.worked.checked, note: f.note.value || null});
+      loadList(); show(id);
+    } catch (x) { $("ferr").textContent = x.message; }
+  };
+}
+
+async function loadLog() {
+  const L = await api("/api/log"), s = L.learning;
+  $("log").innerHTML = `<h2>Learning</h2>
+    <p>λ̂ now <b>${s.lam.toFixed(4)}</b> (trained ${s.lam_trained.toFixed(4)}) from ${s.n_feedback} verdicts.
+      ${Object.keys(s.revoked).length ? "" : "No scenario revoked."}</p>
+    ${Object.entries(s.revoked).map(([k, v]) => `<p class="HUMAN">AI revoked for ${esc(k)}: ${esc(v)}</p>`).join("")}
+    ${Object.keys(s.scenarios).length ? `<table><tr><th>Scenario</th><th>Good</th><th>Bad</th><th>P(AI error &gt; 10%)</th></tr>
+      ${Object.entries(s.scenarios).map(([k, x]) => `<tr><td>${esc(k)}</td><td>${x.good}</td><td>${x.bad}</td><td>${x.p_err_above_target}</td></tr>`).join("")}</table>` : ""}
+    <h2>Feedback</h2>${L.feedback.length ? `<table><tr><th>When</th><th>Ticket</th><th>Scenario</th><th>Route</th><th>Verdict</th><th>P(ai)</th></tr>
+      ${L.feedback.map(f => `<tr><td class="mute">${when(f.at)}</td><td>${f.ticket_id}</td><td>${esc(f.scenario)}</td><td class="${f.route}">${f.route}</td>
+      <td>${f.verdict.replace(/_/g, " ")}</td><td>${f.p_ai.toFixed(3)}</td></tr>`).join("")}</table>` : `<p class="mute">No feedback yet.</p>`}
+    <h2>Decisions</h2><table><tr><th>When</th><th>Ticket</th><th>Scenario</th><th>Route</th><th>Why</th><th>Autopilot</th><th>Verdict</th></tr>
+      ${L.decisions.map(x => `<tr><td class="mute">${when(x.at)}</td><td>${x.ticket_id}</td><td>${esc(x.scenario)}</td><td class="${x.route}">${x.route}</td>
+      <td>${esc(x.why)}</td><td>${x.autopilot || ""}</td><td>${(x.verdict || "").replace(/_/g, " ")}</td></tr>`).join("")}</table>`;
+}
+
+function tab(name) {
+  TAB = name;
+  $("queue").hidden = name === "log"; $("log").hidden = name !== "log";
+  document.querySelector("#queue .row").hidden = name === "review";
+  name === "log" ? loadLog() : loadList();
+}
+for (const a of document.querySelectorAll("[data-tab]")) a.onclick = e => { e.preventDefault(); tab(a.dataset.tab); };
+$("st").onchange = $("rt").onchange = loadList;
+tab("queue");
+</script>
+</body>
+</html>

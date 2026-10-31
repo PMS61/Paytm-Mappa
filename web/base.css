@@ -1,0 +1,23 @@
+:root { --bg: #fff; --fg: #1a1a1a; --mute: #6b6b6b; --line: #e3e3e3; --soft: #f6f6f6; --accent: #0b5cad; --bad: #b3261e; }
+@media (prefers-color-scheme: dark) { :root { --bg: #151515; --fg: #e8e8e8; --mute: #9a9a9a; --line: #2e2e2e; --soft: #1d1d1d; --accent: #6aa8ea; --bad: #f2827a; } }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.5 system-ui, sans-serif; }
+header { display: flex; gap: 24px; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+nav { display: flex; gap: 16px; } nav a, a { color: var(--accent); text-decoration: none; }
+main { max-width: 1100px; margin: 0 auto; padding: 16px; }
+section { margin-bottom: 28px; } h2 { font-size: 16px; margin: 0 0 12px; } h3 { font-size: 14px; margin: 18px 0 6px; }
+label { display: block; margin-bottom: 10px; color: var(--mute); font-size: 12px; }
+label.check { display: flex; gap: 6px; align-items: center; font-size: 14px; color: var(--fg); }
+input, select, textarea, button { font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 6px 8px; }
+label > input, label > select, label > textarea { display: block; width: 100%; margin-top: 2px; }
+label.check > input { width: auto; margin: 0; }
+button { cursor: pointer; background: var(--soft); } button:hover { border-color: var(--mute); }
+.row { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0 12px; }
+fieldset { border: 1px solid var(--line); border-radius: 4px; margin: 0 0 10px; } legend { color: var(--mute); font-size: 12px; }
+table { width: 100%; border-collapse: collapse; } th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--mute); font-weight: 500; font-size: 12px; } tr.click { cursor: pointer; } tr.click:hover, tr.sel { background: var(--soft); }
+.err { color: var(--bad); } .mute { color: var(--mute); } .tag { font-size: 12px; padding: 1px 6px; border: 1px solid var(--line); border-radius: 3px; }
+.HUMAN { color: var(--bad); } .AI { color: var(--accent); }
+pre { background: var(--soft); padding: 8px; border-radius: 4px; overflow-x: auto; font-size: 12px; white-space: pre-wrap; }
+.grid2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 20px; }
+@media (max-width: 800px) { .grid2 { grid-template-columns: 1fr; } }

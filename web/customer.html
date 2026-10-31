@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Paytm Help</title>
+<link rel="stylesheet" href="/static/base.css">
+</head>
+<body>
+<header><b>Paytm Help</b><nav><a href="/">Raise a ticket</a><a href="/support">Support desk</a></nav></header>
+<main>
+<section>
+  <h2>Raise a ticket</h2>
+  <form id="f">
+    <div class="row">
+      <label>I am a<select name="role"><option value="merchant">Merchant</option><option value="customer">Customer</option></select></label>
+      <label>Name<input name="name" required value="Ghruank General Store"></label>
+      <label>Phone<input name="phone" required pattern="\+?\d{10,13}" value="9876500001"></label>
+      <label>Merchant ID<input name="merchant_id" placeholder="optional"></label>
+    </div>
+    <div class="row">
+      <label>Raised via<select name="channel"><option value="manual">Form</option><option value="chatbot">Chatbot</option><option value="call">Call</option></select></label>
+      <label>Category<select name="category" id="cat"><option value="">Not sure</option></select></label>
+    </div>
+    <label>Subject<input name="subject" required minlength="3" placeholder="Settlement of ₹12,400 not received"></label>
+    <label>Describe the problem<textarea name="description" rows="3"></textarea></label>
+    <label>What should we do?<input name="ask" placeholder="optional"></label>
+    <fieldset id="details"><legend>Details</legend><div class="row" id="dfields"></div></fieldset>
+    <label id="tr" hidden>Transcript (one turn per line, <code>customer:</code> or <code>agent:</code>)
+      <textarea name="transcript" rows="5" placeholder="customer: mera settlement nahi aaya&#10;agent: kitne ka tha?"></textarea></label>
+    <label class="check"><input type="checkbox" name="human_requested"> I want to talk to a person</label>
+    <button>Raise ticket</button> <span id="err" class="err"></span>
+  </form>
+</section>
+<section id="out" hidden></section>
+<section>
+  <h2>My tickets</h2>
+  <div class="row"><label>Phone<input id="myphone" value="9876500001"></label><button type="button" id="load">Show</button></div>
+  <div id="mine"></div>
+</section>
+</main>
+<script src="/static/common.js"></script>
+<script>
+const DETAIL = {amount: ["Amount (₹)", "number"], txn_id: ["Transaction ID", "text"], refund_amount: ["Refund amount (₹)", "number"],
+  refund_kind: ["Refund", ["", "new request", "not received"]], bank_name: ["Bank", "text"], account_last4: ["Account last 4 digits", "text"],
+  account_changed: ["Changed bank account recently?", ["", "true", "false"]], account_changed_hours_ago: ["Changed how many hours ago", "number"],
+  device_issue: ["What is wrong with the device", "text"], offline_days: ["Days not working", "number"],
+  kyc_issue: ["What the app says about KYC", "text"], started: ["When did it start", "text"]};
+const SHOW = {settlement: ["amount", "bank_name", "account_last4", "account_changed", "account_changed_hours_ago", "started"],
+  refund: ["amount", "txn_id", "refund_kind", "refund_amount", "started"], device: ["device_issue", "offline_days"],
+  kyc: ["kyc_issue"], payment: ["amount", "txn_id", "started"], other: [], "": ["amount", "txn_id"]};
+let TAX;
+const f = document.getElementById("f");
+
+function field(k, req) {
+  const [lab, type] = DETAIL[k];
+  const input = Array.isArray(type) ? `<select name="d_${k}">${type.map(o => `<option>${o}</option>`).join("")}</select>`
+    : `<input name="d_${k}" type="${type}" step="any">`;
+  return `<label>${lab}${req ? " *" : ""}${input}</label>`;
+}
+function renderDetails() {
+  const c = f.category.value, req = (TAX.required[c] || []);
+  document.getElementById("dfields").innerHTML = SHOW[c].map(k => field(k, req.includes(k))).join("");
+}
+function readDetails(form) {
+  const d = {};
+  for (const el of form.querySelectorAll("[name^=d_]")) {
+    const k = el.name.slice(2), v = el.value.trim();
+    if (!v) continue;
+    d[k] = v === "true" ? true : v === "false" ? false : DETAIL[k][1] === "number" ? Number(v) : v;
+  }
+  return d;
+}
+function parseTranscript(s) {
+  return s.split("\n").map(l => l.trim()).filter(Boolean).map(l => {
+    const m = l.match(/^(customer|agent)\s*:\s*(.*)$/i);
+    return m ? {speaker: m[1].toLowerCase(), text: m[2]} : {speaker: "customer", text: l};
+  });
+}
+function showTicket(t) {
+  const c = t.clarity, out = document.getElementById("out");
+  out.hidden = false;
+  out.innerHTML = `<h2>${t.id}</h2>
+    <p>Status: <b>${esc(t.status.replace("_", " "))}</b></p>
+    <p>${esc(c.scenario_title)}. Next step: ${esc(c.action.summary)}.</p>
+    ${c.details_missing.length ? `<form id="more"><p>We still need:</p><div class="row">${c.details_missing.map(k => field(k, true)).join("")}</div>
+      <button>Add details</button></form>` : ""}`;
+  const more = document.getElementById("more");
+  if (more) more.onsubmit = async e => {
+    e.preventDefault();
+    showTicket(await api(`/api/tickets/${t.id}`, "PATCH", {by: "customer", details: readDetails(more)}));
+  };
+}
+
+f.channel.onchange = () => document.getElementById("tr").hidden = f.channel.value === "manual";
+f.category.onchange = renderDetails;
+f.onsubmit = async e => {
+  e.preventDefault();
+  document.getElementById("err").textContent = "";
+  const body = {channel: f.channel.value, category: f.category.value || null, subject: f.subject.value,
+    description: f.description.value, ask: f.ask.value || null, details: readDetails(f), human_requested: f.human_requested.checked,
+    raised_by: {role: f.role.value, name: f.name.value, phone: f.phone.value, merchant_id: f.merchant_id.value || null},
+    transcript: f.channel.value === "manual" ? [] : parseTranscript(f.transcript.value)};
+  try { showTicket(await api("/api/tickets", "POST", body)); }
+  catch (x) { document.getElementById("err").textContent = x.message; }
+};
+document.getElementById("load").onclick = async () => {
+  const ts = await api(`/api/tickets?phone=${encodeURIComponent(document.getElementById("myphone").value)}`);
+  document.getElementById("mine").innerHTML = ts.length ? `<table><tr><th>Ticket</th><th>Subject</th><th>Status</th><th>Raised</th></tr>
+    ${ts.map(t => `<tr><td>${t.id}</td><td>${esc(t.subject)}</td><td>${t.status.replace("_", " ")}</td><td>${when(t.created_at)}</td></tr>`).join("")}</table>`
+    : "<p>No tickets.</p>";
+};
+api("/api/taxonomy").then(t => {
+  TAX = t;
+  for (const [k, v] of Object.entries(t.categories)) f.category.insertAdjacentHTML("beforeend", `<option value="${k}">${esc(v)}</option>`);
+  renderDetails();
+});
+</script>
+</body>
+</html>

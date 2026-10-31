@@ -1,0 +1,159 @@
+{
+ "feedback_tickets": 0,
+ "alpha": 0.02,
+ "lambda": 0.8825,
+ "temperatures": {
+  "route": 5.164,
+  "category": 0.2,
+  "complete": 0.2,
+  "manipulation": 4.022,
+  "stake": 3.132
+ },
+ "encoder": "minishlab/potion-multilingual-128M",
+ "n": {
+  "train": 1874,
+  "cal": 485,
+  "test": 465,
+  "ood": 233,
+  "adv": 129
+ },
+ "test": {
+  "route": {
+   "acc": 0.9226,
+   "ece": 0.0269
+  },
+  "category": {
+   "acc": 1.0,
+   "ece": 0.0
+  },
+  "complete": {
+   "acc": 1.0,
+   "ece": 0.0
+  },
+  "manipulation": {
+   "acc": 0.9849,
+   "ece": 0.0119
+  },
+  "stake": {
+   "acc": 0.9333,
+   "ece": 0.0245
+  },
+  "routing": {
+   "n": 465,
+   "human_share": 0.6731,
+   "jev_only": {
+    "missed_human": 0.028,
+    "ai_coverage": 0.7895
+   },
+   "rules_only": {
+    "missed_human": 0.114,
+    "ai_coverage": 0.8882
+   },
+   "deployed": {
+    "missed_human": 0.0194,
+    "ai_coverage": 0.7039
+   },
+   "manip_recall": 0.9211
+  }
+ },
+ "test_uncalibrated_ece": {
+  "route": 0.068,
+  "category": 0.0,
+  "complete": 0.0002,
+  "manipulation": 0.0136,
+  "stake": 0.0567
+ },
+ "ood": {
+  "route": {
+   "acc": 0.8841,
+   "ece": 0.0739
+  },
+  "category": {
+   "acc": 1.0,
+   "ece": 0.0
+  },
+  "complete": {
+   "acc": 1.0,
+   "ece": 0.0
+  },
+  "manipulation": {
+   "acc": 0.9785,
+   "ece": 0.0118
+  },
+  "stake": {
+   "acc": 0.9614,
+   "ece": 0.0199
+  },
+  "routing": {
+   "n": 233,
+   "human_share": 0.8069,
+   "jev_only": {
+    "missed_human": 0.0601,
+    "ai_coverage": 0.8222
+   },
+   "rules_only": {
+    "missed_human": 0.2618,
+    "ai_coverage": 0.5333
+   },
+   "deployed": {
+    "missed_human": 0.0515,
+    "ai_coverage": 0.4444
+   },
+   "manip_recall": 0.9167
+  }
+ },
+ "ood_uncalibrated_ece": {
+  "route": 0.1098,
+  "category": 0.0,
+  "complete": 0.0001,
+  "manipulation": 0.0222,
+  "stake": 0.0246
+ },
+ "adv": {
+  "route": {
+   "acc": 0.8372,
+   "ece": 0.0815
+  },
+  "category": {
+   "acc": 1.0,
+   "ece": 0.0
+  },
+  "complete": {
+   "acc": 0.9302,
+   "ece": 0.0734
+  },
+  "manipulation": {
+   "acc": 0.6744,
+   "ece": 0.321
+  },
+  "stake": {
+   "acc": 0.9457,
+   "ece": 0.0261
+  },
+  "routing": {
+   "n": 129,
+   "human_share": 0.7597,
+   "jev_only": {
+    "missed_human": 0.0698,
+    "ai_coverage": 0.6774
+   },
+   "rules_only": {
+    "missed_human": 0.0698,
+    "ai_coverage": 0.871
+   },
+   "deployed": {
+    "missed_human": 0.0233,
+    "ai_coverage": 0.6129
+   },
+   "manip_recall": 0.2364
+  }
+ },
+ "adv_uncalibrated_ece": {
+  "route": 0.1479,
+  "category": 0.0,
+  "complete": 0.0706,
+  "manipulation": 0.3254,
+  "stake": 0.0419
+ },
+ "latency_ms_per_ticket": 4.28
+}
