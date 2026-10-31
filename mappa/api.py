@@ -115,13 +115,28 @@ def search_policies(q: str, category: str | None = None, k: int = 5):
 
 
 class ClarityStart(BaseModel):
+    """Either a nested `raised_by`, or flat `phone` / `name` / `role` (voice platforms such as Sarvam can only send
+    flat fields). `id` lets the caller choose the session id, e.g. Sarvam's Interaction ID; repeating it is idempotent."""
     channel: Literal["chatbot", "call"] = "call"
-    raised_by: Party
+    raised_by: Party | None = None
+    phone: str | None = Field(default=None, max_length=20)
+    name: str | None = Field(default=None, max_length=80)
+    role: Literal["customer", "merchant"] = "merchant"
+    id: str | None = Field(default=None, min_length=1, max_length=128)
     language: str | None = Field(default=None, max_length=8)
+
+    def party(self) -> Party | None:
+        if self.raised_by:
+            return self.raised_by
+        phone = (self.phone or "").replace(" ", "").replace("-", "")
+        try:  # an unusable phone (e.g. a browser test call) still opens the session; the ticket step escalates later
+            return Party(role=self.role, name=(self.name or "Phone caller").strip() or "Phone caller", phone=phone)
+        except ValueError:
+            return None
 
 
 class ClarityIn(BaseModel):
-    id: str = Field(min_length=1, max_length=20)
+    id: str = Field(min_length=1, max_length=128)
     information: str = Field(min_length=1, max_length=4000)
 
 
@@ -143,7 +158,7 @@ async def validation_error(request: Request, exc: RequestValidationError):
 
 @app.post("/api/clarity/sessions")
 def start_clarity(body: ClarityStart):
-    return {"id": sessions.create(channel=body.channel, raised_by=body.raised_by, language=body.language).id}
+    return {"id": sessions.create(channel=body.channel, raised_by=body.party(), language=body.language, sid=body.id).id}
 
 
 @app.post("/api/clarity")
@@ -159,7 +174,7 @@ def clarity_turn(body: ClarityIn):
         return _clarity_error(500, body.id, "internal error")
 
 
-@app.get("/api/clarity/{sid}")
+@app.get("/api/clarity/{sid:path}")
 def get_clarity(sid: str):
     s = sessions.get(sid)
     return s if s else _clarity_error(404, sid, f"no clarity session {sid}")

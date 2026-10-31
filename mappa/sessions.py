@@ -50,10 +50,14 @@ def _write(db: dict):
         raise
 
 
-def create(channel: str = "call", raised_by: Party | None = None, language: str | None = None) -> ClaritySession:
+def create(channel: str = "call", raised_by: Party | None = None, language: str | None = None,
+           sid: str | None = None) -> ClaritySession:
+    """sid: a caller-chosen id (e.g. Sarvam's Interaction ID). If it already exists, that session is returned."""
     with _locked():
         db = _read()
-        sid = f"CLR-{secrets.token_hex(4)}"
+        if sid and sid in db["sessions"]:
+            return ClaritySession.model_validate(db["sessions"][sid])
+        sid = sid or f"CLR-{secrets.token_hex(4)}"
         while sid in db["sessions"]:
             sid = f"CLR-{secrets.token_hex(4)}"
         t = now()

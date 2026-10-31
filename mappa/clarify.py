@@ -236,7 +236,9 @@ def _step(session_id: str, information: str, llm) -> dict:
     mcp = _draft_check(reply["ticket"], scenario)
     if mcp is not None:
         s.mcp = mcp
-        if mcp["need_human"]:
+        # "other" is the LLM's placeholder while the problem is still vague: keep clarifying instead of escalating
+        still_vague = mcp["category"] == "other" and reply["clarification_needed"]
+        if mcp["need_human"] and not still_vague:
             return _escalate(s, f"not solvable with the Paytm MCP tools: {mcp['reason']}")
     concluding = not reply["clarification_needed"] and reply["conclusion"]
     if concluding and mcp is not None and mcp["details_missing"]:

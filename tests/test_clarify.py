@@ -279,3 +279,10 @@ def test_category_specific_policy_holds_fire_on_the_real_policy_files(monkeypatc
     out = _escalates(_session(), DONE, info=info)
     assert clause in out["reason"]
     assert env == []
+
+
+def test_vague_first_turn_drafted_as_other_keeps_clarifying():
+    """Regression: draft category "other" (no playbook) escalated a vague opener on turn 1."""
+    vague = dict(ASKING, ticket={"category": "other", "subject": "unclear", "details": {}})
+    out = clarify.step(_session().id, "hello, mujhe ek problem hai", llm=FakeLLM(vague))
+    assert out["status"] == "needs_clarification" and out["need_human"] is False

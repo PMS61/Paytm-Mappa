@@ -46,3 +46,4 @@ data/learning.json
 data/clarity_sessions.json
 data/clarity_sessions.json.lock
 models/
+.playwright-mcp/

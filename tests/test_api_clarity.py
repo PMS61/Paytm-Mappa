@@ -161,3 +161,20 @@ def test_422_error_detail_does_not_echo_the_input_secret():
 def test_422_detail_does_not_change_manual_ticket_error_body():
     r = client.post("/api/tickets", json={"channel": "manual"})
     assert r.status_code == 422 and "id" not in r.json() and isinstance(r.json()["detail"], list)
+
+
+def test_sarvam_flat_body_with_interaction_id_is_idempotent():
+    iid = "20260828/8448d531-12:47:17-0f1a2cb7"
+    body = {"channel": "call", "phone": "+919876500002", "role": "merchant", "name": "Phone caller", "language": "hi",
+            "id": iid}
+    r1 = client.post("/api/clarity/sessions", json=body)
+    r2 = client.post("/api/clarity/sessions", json=body)
+    assert r1.status_code == r2.status_code == 200 and r1.json() == r2.json() == {"id": iid}
+    s = client.get(f"/api/clarity/{iid}").json()
+    assert s["raised_by"]["phone"] == "+919876500002" and s["raised_by"]["role"] == "merchant"
+
+
+def test_flat_body_with_unusable_phone_still_opens_a_session():
+    r = client.post("/api/clarity/sessions", json={"phone": "web-test", "id": "IID-web-1"})
+    assert r.status_code == 200 and r.json() == {"id": "IID-web-1"}
+    assert client.get("/api/clarity/IID-web-1").json()["raised_by"] is None
