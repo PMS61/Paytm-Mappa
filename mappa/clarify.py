@@ -460,3 +460,22 @@ def _draft_check(ticket: dict, scenario: str) -> dict | None:
     details = _details(ticket)
     key, title, action = taxonomy.scenario_for(cat, details, scenario)
     return capability.check(action.code, details) | {"category": cat, "scenario": key, "scenario_title": title}
+
+
+def agent_message(r: dict) -> str:
+    """One plain instruction for a voice / chat agent that can only pass a single reply field to its model."""
+    st = r.get("status")
+    if st == "needs_clarification":
+        qs = r.get("clarifications") or [GENERIC_QUESTION]
+        return ("STATUS needs_clarification. Ask the caller these questions one at a time, in their language, then call "
+                "clarity_check again with their answers: " + " | ".join(qs))
+    if st == "done":
+        where = ("It was resolved automatically; tell the caller it is fixed and they will get an SMS."
+                 if r.get("route") == "AI" and r.get("ticket_status") == "closed"
+                 else "A specialist team will handle it and contact the caller; do not transfer the call.")
+        return (f"STATUS done. Tell the caller their ticket number is {r.get('ticket_id')}. {where} "
+                "Ask if there is anything else, then end the call.")
+    if st == "escalate":
+        return ("STATUS escalate. Tell the caller you are connecting them to a support specialist, then call "
+                f"call_transfer. Reason (do not read it out): {r.get('reason') or r.get('need_human_reason')}")
+    return "STATUS error. Say one moment and call clarity_check again once; if it fails again, call call_transfer."

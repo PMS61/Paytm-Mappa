@@ -65,12 +65,26 @@ def test_clarity_turn_needs_clarification(monkeypatch):
     assert body["clarifications"] == ["Which transaction ID?"] and body["calls_left"] == 4
 
 
-def test_unknown_session_is_404_with_id(monkeypatch):
-    fake_llm(monkeypatch, ASKING)
-    r = client.post("/api/clarity", json={"id": "CLR-nope0000", "information": "hi"})
-    assert r.status_code == 404 and r.json()["id"] == "CLR-nope0000"
+def test_unknown_session_on_get_is_404_with_id():
     r = client.get("/api/clarity/CLR-nope0000")
     assert r.status_code == 404 and r.json()["id"] == "CLR-nope0000"
+
+
+def test_turn_for_unknown_session_opens_it(monkeypatch):
+    """Sarvam's on-start hook may fail; the first clarity turn then opens the session instead of a 404 transfer."""
+    fake_llm(monkeypatch, ASKING)
+    r = client.post("/api/clarity", json={"id": "IID-no-start", "information": "settlement nahi aaya"})
+    assert r.status_code == 200 and r.json()["status"] == "needs_clarification"
+    assert client.get("/api/clarity/IID-no-start").status_code == 200
+
+
+def test_every_reply_has_agent_message(monkeypatch):
+    fake_llm(monkeypatch, ASKING)
+    sid = _start()
+    r = client.post("/api/clarity", json={"id": sid, "information": "refund"}).json()
+    assert r["agent_message"].startswith("STATUS needs_clarification") and "Which transaction ID?" in r["agent_message"]
+    err = client.post("/api/clarity", json={"id": sid, "information": ""}).json()
+    assert err["agent_message"].startswith("STATUS error")
 
 
 def test_empty_information_is_422_with_id():
@@ -93,8 +107,10 @@ def test_cap_escalation_over_http(monkeypatch):
     client.post("/api/clarity", json={"id": sid, "information": "one"})
     r = client.post("/api/clarity", json={"id": sid, "information": "two"})
     assert r.status_code == 200
-    assert r.json() == {"id": sid, "status": "escalate", "done": False, "reason": "too many clarity calls",
-                        "need_human": True, "need_human_reason": "too many clarity calls", "mcp": None}
+    body = r.json()
+    assert body.pop("agent_message").startswith("STATUS escalate")
+    assert body == {"id": sid, "status": "escalate", "done": False, "reason": "too many clarity calls",
+                    "need_human": True, "need_human_reason": "too many clarity calls", "mcp": None}
 
 
 def test_critical_escalation_over_http(monkeypatch):
@@ -146,7 +162,7 @@ def test_internal_key_error_is_not_reported_as_unknown_session(monkeypatch):
     fake_llm(monkeypatch, DONE)
     sid = _start()
     r = client.post("/api/clarity", json={"id": sid, "information": "refund 4000"})
-    assert r.status_code == 500 and r.json() == {"id": sid, "detail": "internal error"}
+    assert r.status_code == 500 and r.json()["id"] == sid and r.json()["detail"] == "internal error"
 
 
 def test_422_error_detail_does_not_echo_the_input_secret():

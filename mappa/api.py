@@ -149,7 +149,8 @@ class ClarityIn(BaseModel):
 
 
 def _clarity_error(status: int, sid: str | None, detail: str) -> JSONResponse:
-    return JSONResponse(status_code=status, content={"id": sid, "detail": detail})
+    return JSONResponse(status_code=status, content={"id": sid, "detail": detail, "status": "error",
+                                                     "agent_message": clarify.agent_message({"status": "error"})})
 
 
 @app.exception_handler(RequestValidationError)
@@ -160,7 +161,8 @@ async def validation_error(request: Request, exc: RequestValidationError):
     sid = exc.body.get("id") if isinstance(exc.body, dict) else None
     errors = [{k: v for k, v in e.items() if k not in ("input", "ctx")} for e in exc.errors()]  # input may hold a secret
     return JSONResponse(status_code=422, content={"id": sid if isinstance(sid, str) else None,
-                                                  "detail": jsonable_encoder(errors)})
+                                                  "detail": jsonable_encoder(errors), "status": "error",
+                                                  "agent_message": clarify.agent_message({"status": "error"})})
 
 
 
@@ -171,8 +173,15 @@ def start_clarity(body: ClarityStart):
 
 @app.post("/api/clarity")
 def clarity_turn(body: ClarityIn):
+    """Every reply carries `agent_message`, one plain instruction for agents that pass a single field to their model.
+    An unknown id opens the session on the spot (e.g. Sarvam's on-start hook failed), so the call can still go on."""
     try:
-        return clarify.step(body.id, body.information)
+        try:
+            r = clarify.step(body.id, body.information)
+        except clarify.UnknownSession:
+            sessions.create(channel="call", sid=body.id)
+            r = clarify.step(body.id, body.information)
+        return {**r, "agent_message": clarify.agent_message(r)}
     except clarify.UnknownSession:
         return _clarity_error(404, body.id, f"no clarity session {body.id}")
     except SarvamError as e:
