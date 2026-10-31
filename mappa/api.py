@@ -34,6 +34,11 @@ app.mount("/static", StaticFiles(directory=WEB), name="static")
 
 # Mount Sarvam Voice & Telephony router
 try:
+    import sys
+    from pathlib import Path
+    _root = str(Path(__file__).resolve().parents[1])
+    if _root not in sys.path:
+        sys.path.insert(0, _root)
     import sarvam_server
     app.include_router(sarvam_server.router)
 except Exception as e:

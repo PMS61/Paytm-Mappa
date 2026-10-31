@@ -166,6 +166,24 @@ async def trigger_outbound_call(req: OutboundCallPayload):
                     transcript=[schema.Turn(speaker="customer", text=summary or "Voice call initiated")]
                 ))
                 req.ticket_id = new_t.id
+
+                try:
+                    with sqlite3.connect(DB_PATH) as conn:
+                        conn.execute("""
+                            INSERT OR REPLACE INTO tickets (
+                                ticket_id, customer_name, user_phone, issue_summary, status, escalation_phone
+                            ) VALUES (?, ?, ?, ?, ?, ?)
+                        """, (
+                            new_t.id,
+                            cust_name or "Voice Caller",
+                            target_phone or ("+91" + raw_phone),
+                            summary or "Voice Call Support",
+                            new_t.status.upper(),
+                            FORWARD_TO_PHONE
+                        ))
+                        conn.commit()
+                except Exception:
+                    pass
         except Exception as e:
             import logging
             logging.getLogger(__name__).warning("Could not auto-create ticket for voice call: %s", e)
@@ -246,7 +264,7 @@ async def trigger_outbound_call(req: OutboundCallPayload):
             t = mappa_store.get(req.ticket_id)
             if t:
                 t.history.append(schema.Event(
-                    by="sarvam_call",
+                    by="system",
                     status=t.status,
                     note=f"Outbound AI call dispatched to {target_phone} (id: {interaction_id})"
                 ))
@@ -270,13 +288,16 @@ async def tool_lookup_caller_context(req: InboundLookupPayload):
     if mappa_store:
         try:
             matched = None
-            if req.ticket_id:
+            if req.ticket_id and req.ticket_id not in ("NEW", "NEW-INBOUND", "INBOUND-CALL"):
                 matched = mappa_store.get(req.ticket_id)
             elif req.caller_phone:
-                clean_phone = req.caller_phone.replace("+91", "").strip()
+                clean_phone = req.caller_phone.replace("+91", "").replace(" ", "").replace("-", "").strip()
+                if len(clean_phone) >= 10:
+                    clean_phone = clean_phone[-10:]
+                # Check for existing active ticket (most recent first)
                 for t in mappa_store.all_tickets():
-                    p = t.raised_by.phone.replace("+91", "").strip()
-                    if p == clean_phone:
+                    p = t.raised_by.phone.replace("+91", "").replace(" ", "").replace("-", "").strip()
+                    if p.endswith(clean_phone) and t.status not in ("closed", "resolved"):
                         matched = t
                         break
             if matched:
@@ -288,17 +309,21 @@ async def tool_lookup_caller_context(req: InboundLookupPayload):
                     "status": matched.status,
                     "transfer_phone_number": FORWARD_TO_PHONE
                 }
-        except Exception:
-            pass
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning("mappa_store lookup failed: %s", e)
 
     # 2. Fall back to local SQLite tickets
     with sqlite3.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
         row = None
-        if req.ticket_id:
+        if req.ticket_id and req.ticket_id not in ("NEW", "NEW-INBOUND", "INBOUND-CALL"):
             row = conn.execute("SELECT * FROM tickets WHERE ticket_id = ?", (req.ticket_id,)).fetchone()
         elif req.caller_phone:
-            row = conn.execute("SELECT * FROM tickets WHERE user_phone = ?", (req.caller_phone,)).fetchone()
+            row = conn.execute(
+                "SELECT * FROM tickets WHERE user_phone = ? AND status NOT IN ('CLOSED', 'RESOLVED') ORDER BY rowid DESC LIMIT 1",
+                (req.caller_phone,)
+            ).fetchone()
 
         if row:
             data = dict(row)
@@ -311,12 +336,66 @@ async def tool_lookup_caller_context(req: InboundLookupPayload):
                 "transfer_phone_number": data["escalation_phone"] or FORWARD_TO_PHONE
             }
 
+    # 3. DIRECT CALL TO RAISE A NEW TICKET:
+    # When a caller dials directly without an active ticket, auto-raise a dispute ticket immediately!
+    clean_p = (req.caller_phone or "9876543210").replace("+91", "").replace(" ", "").replace("-", "").strip()
+    if len(clean_p) > 10:
+        clean_p = clean_p[-10:]
+    elif len(clean_p) < 10:
+        clean_p = "9876543210"
+
+    caller_name = f"Phone Caller ({clean_p})"
+    issue_sum = f"Inbound phone inquiry from {req.caller_phone or clean_p}"
+    new_ticket_id = f"TKT-{datetime.now(timezone.utc).strftime('%Y%m%d')}-CALL"
+    ticket_status = "open"
+
+    if pipeline and schema:
+        try:
+            new_t = pipeline.raise_ticket(schema.TicketIn(
+                channel="call",
+                raised_by=schema.Party(
+                    role="customer",
+                    name=caller_name,
+                    phone=clean_p
+                ),
+                subject=issue_sum,
+                description=f"Direct inbound phone call received on hotline {AGENT_PHONE}",
+                ask="Autonomous resolution or human escalation via phone",
+                transcript=[schema.Turn(speaker="customer", text=f"Direct inbound phone call connected to hotline {AGENT_PHONE}")]
+            ))
+            new_ticket_id = new_t.id
+            ticket_status = new_t.status
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error("Failed to auto-raise ticket for inbound call: %s", e)
+
+    # Insert into SQLite tickets table
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.execute("""
+                INSERT OR REPLACE INTO tickets (
+                    ticket_id, customer_name, user_phone, issue_summary, status, escalation_phone
+                ) VALUES (?, ?, ?, ?, ?, ?)
+            """, (
+                new_ticket_id,
+                caller_name,
+                req.caller_phone or ("+91" + clean_p),
+                issue_sum,
+                ticket_status.upper(),
+                FORWARD_TO_PHONE
+            ))
+            conn.commit()
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning("SQLite ticket save failed: %s", e)
+
     return {
         "found": False,
-        "ticket_id": "NEW-INBOUND",
-        "customer_name": "Valued Customer",
-        "issue_summary": "General Inquiry",
-        "status": "OPEN",
+        "is_new_ticket": True,
+        "ticket_id": new_ticket_id,
+        "customer_name": caller_name,
+        "issue_summary": issue_sum,
+        "status": ticket_status,
         "transfer_phone_number": FORWARD_TO_PHONE
     }
 
@@ -330,7 +409,7 @@ async def tool_update_or_escalate(req: TicketUpdatePayload):
             if t:
                 t.status = req.new_status
                 if req.request_human_transfer:
-                    t.history.append(schema.Event(by="sarvam_call", status=t.status, note="Caller requested live human transfer"))
+                    t.history.append(schema.Event(by="customer", status=t.status, note="Caller requested live human transfer"))
                 mappa_store.save(t)
         except Exception:
             pass
@@ -371,6 +450,73 @@ async def sarvam_webhook_receiver(request: Request):
     details = await fetch_full_interaction_details(interaction_id)
     forwarded_flag = 1 if (details["forwarded_recording_url"] or body.get("is_transferred")) else 0
 
+    # Parse conversation turns into schema.Turn
+    turns = []
+    if details.get("transcript"):
+        for msg in details["transcript"]:
+            if isinstance(msg, dict):
+                role = (msg.get("role") or msg.get("speaker") or "customer").lower()
+                speaker = "agent" if role in ("assistant", "agent", "bot", "system") else "customer"
+                text = msg.get("text") or msg.get("message") or msg.get("content") or ""
+                if text.strip():
+                    turns.append(schema.Turn(speaker=speaker, text=text.strip()))
+
+    # Find ticket or create if this was a direct inbound call without prior ticket
+    t = mappa_store.get(ticket_id) if (mappa_store and ticket_id.startswith("TKT-")) else None
+
+    if not t and mappa_store and pipeline and schema:
+        clean_p = (user_phone or "9876543210").replace("+91", "").replace(" ", "").replace("-", "").strip()
+        if len(clean_p) > 10:
+            clean_p = clean_p[-10:]
+        elif len(clean_p) < 10:
+            clean_p = "9876543210"
+
+        call_turns = turns if turns else [schema.Turn(speaker="customer", text=f"Direct voice call interaction completed ({duration}s)")]
+        try:
+            t = pipeline.raise_ticket(schema.TicketIn(
+                channel="call",
+                raised_by=schema.Party(
+                    role="customer",
+                    name=f"Inbound Caller ({clean_p})",
+                    phone=clean_p
+                ),
+                subject=f"Inbound Call from {user_phone or clean_p}",
+                description=f"Direct phone call to hotline {AGENT_PHONE} ({duration}s)",
+                ask="Autonomous resolution or human escalation",
+                transcript=call_turns
+            ))
+            ticket_id = t.id
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error("Failed to raise ticket from webhook call: %s", e)
+
+    # If ticket exists, attach transcript, run clarity/Jev update, and record history event
+    if t and mappa_store and schema:
+        try:
+            if turns:
+                t.transcript = turns
+                try:
+                    from mappa import clarity as clarity_mod
+                    t = clarity_mod.run(t)
+                    if pipeline:
+                        t = pipeline.process(t)
+                except Exception as ce:
+                    import logging
+                    logging.getLogger(__name__).warning("Clarity re-run on completed call failed: %s", ce)
+
+            dur_str = f"{duration}s" if duration else "completed"
+            rec_str = f" Recording: {details['recording_url']}" if details['recording_url'] else ""
+            t.history.append(schema.Event(
+                by="system",
+                status=t.status,
+                note=f"Sarvam voice call {direction} ({dur_str}). Transfer: {bool(forwarded_flag)}.{rec_str}"
+            ))
+            mappa_store.save(t)
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning("Failed to update ticket from webhook: %s", e)
+
+    # Save to SQLite call_logs
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute("""
             INSERT INTO call_logs (
@@ -408,21 +554,7 @@ async def sarvam_webhook_receiver(request: Request):
         ))
         conn.commit()
 
-    if mappa_store and schema and ticket_id.startswith("TKT-"):
-        try:
-            t = mappa_store.get(ticket_id)
-            if t:
-                dur_str = f"{duration}s" if duration else "completed"
-                t.history.append(schema.Event(
-                    by="sarvam_call",
-                    status=t.status,
-                    note=f"Sarvam voice call {direction} ({dur_str}). Transfer: {bool(forwarded_flag)}"
-                ))
-                mappa_store.save(t)
-        except Exception:
-            pass
-
-    return {"saved": True, "interaction_id": interaction_id, "forwarded": bool(forwarded_flag)}
+    return {"saved": True, "interaction_id": interaction_id, "ticket_id": ticket_id, "forwarded": bool(forwarded_flag)}
 
 
 @router.post("/api/calls/sync")

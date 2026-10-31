@@ -56,8 +56,8 @@
             <span class="telemetry-value text-mono" style="color: #2e7d32;">ONLINE</span>
           </div>
           <div class="telemetry-cell">
-            <span class="telemetry-label">Agent Phone</span>
-            <span class="telemetry-value text-mono" style="font-size:13px;">+917965481865</span>
+            <span class="telemetry-label">Direct Hotline (Call 24/7)</span>
+            <a href="tel:+917965481865" class="telemetry-value text-mono" style="font-size:13px; color:var(--color-ink); text-decoration:underline; font-weight:700;">+917965481865</a>
           </div>
         </div>
       </div>
@@ -75,23 +75,47 @@
               <span>Select Intake Method</span>
             </div>
             <div style="display: flex; gap: 4px; flex-wrap: wrap;">
-              <button type="button" class="btn btn-sm btn-secondary" id="tab_btn_call" style="padding: 4px 10px;">📞 1. AI VOICE CALL</button>
-              <button type="button" class="btn btn-sm btn-primary" id="tab_btn_form" style="padding: 4px 10px;">2. STANDARD FORM</button>
+              <button type="button" class="btn btn-sm btn-primary" id="tab_btn_call" style="padding: 4px 10px;">📞 1. AI VOICE CALL</button>
+              <button type="button" class="btn btn-sm btn-secondary" id="tab_btn_form" style="padding: 4px 10px;">2. STANDARD FORM</button>
               <button type="button" class="btn btn-sm btn-secondary" id="tab_btn_chat" style="padding: 4px 10px;">3. 💬 AI CHATBOT</button>
             </div>
           </div>
 
           <div class="panel-body">
             
-            <!-- MODE 1: Direct Outbound Voice Call via Sarvam AI Telephony -->
-            <div id="view_call" style="display: none;">
-              <div style="background: #EAF6DC; border: 2px solid #295007; padding: 14px 16px; margin-bottom: 16px;">
-                <div class="text-mono" style="font-weight: 700; font-size: 12px; color: #295007; margin-bottom: 4px;">
-                  📞 SARVAM AI VOICE TELEPHONY (SAMVAAD ENGINE)
+            <!-- MODE 1: Direct Voice Call via Sarvam AI Telephony -->
+            <div id="view_call" style="display: block;">
+              
+              <!-- Direct Inbound Hotline Card -->
+              <div style="background: var(--color-ink); color: var(--color-paper); border: 2px solid var(--color-ink); padding: 16px; margin-bottom: 20px; box-shadow: var(--shadow-hard);">
+                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+                  <div>
+                    <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 6px;">
+                      <span class="badge badge-accent" style="font-size: 11px;">24/7 HOTLINE</span>
+                      <span class="text-mono" style="font-size: 11px; color: #BBB;">NO FORM REQUIRED</span>
+                    </div>
+                    <div style="font-family: var(--font-display); font-size: 24px; font-weight: 700; color: #FFF; letter-spacing: -0.5px;">
+                      <a href="tel:+917965481865" style="color: #FFF; text-decoration: none;">+91 79654 81865</a>
+                    </div>
+                    <p style="font-size: 12px; color: #CCC; margin-top: 4px; max-width: 440px; line-height: 1.4;">
+                      Dial directly from your phone. Sarvam AI Voice Agent answers instantly in Hindi / English, captures your dispute details, and automatically creates a new ticket.
+                    </p>
+                  </div>
+                  <div>
+                    <a href="tel:+917965481865" class="btn btn-accent" style="padding: 12px 20px; font-size: 14px; font-weight: 700; text-decoration: none; display: inline-flex; align-items: center; gap: 6px;">
+                      <span>📞 DIAL HOTLINE NOW</span>
+                    </a>
+                  </div>
                 </div>
-                <p style="font-size: 12px; line-height: 1.4;">
-                  Enter your phone number. Sarvam AI's voice agent (<b>+917965481865</b>) will place an outbound telephone call to your mobile device immediately. 
-                  Speak naturally in Hindi, English, or Hinglish to resolve settlements, refunds, or device disputes.
+              </div>
+
+              <!-- Or Instant Outbound Callback to Raise Ticket -->
+              <div style="background: #EAF6DC; border: 2px solid #295007; padding: 12px 16px; margin-bottom: 16px;">
+                <div class="text-mono" style="font-weight: 700; font-size: 12px; color: #295007; margin-bottom: 2px;">
+                  ⚡ OR HAVE SARVAM CALL YOU TO RAISE TICKET
+                </div>
+                <p style="font-size: 12px; line-height: 1.4; color: #171914;">
+                  Enter your mobile number below. Sarvam AI will place an outbound telephone call to your phone immediately to record your statement and raise a new ticket.
                 </p>
               </div>
 
@@ -123,7 +147,7 @@
 
                 <div style="margin-top: 18px;">
                   <button type="button" class="btn btn-primary" id="btn_trigger_voice_call" style="width: 100%; padding: 12px 18px; font-size: 14px;">
-                    <span>📞 CALL MY PHONE NOW (SARVAM AI)</span>
+                    <span>📞 CALL ME NOW TO RAISE TICKET (SARVAM AI)</span>
                     <span>→</span>
                   </button>
                   <div id="call_api_error" class="alert-error" style="display: none; margin-top: 10px;"></div>
@@ -139,7 +163,7 @@
                 
                 <div style="font-size: 13px; line-height: 1.5; margin-bottom: 12px;">
                   <div><b>Dialing Target:</b> <span class="text-mono" id="disp_call_phone" style="font-weight: 700;">—</span></div>
-                  <div><b>From Agent:</b> <span class="text-mono">+917965481865</span></div>
+                  <div><b>From Agent Hotline:</b> <span class="text-mono">+917965481865</span></div>
                   <div><b>Linked Dispute Ticket:</b> <span class="text-mono" id="disp_call_ticket" style="font-weight: 700;">—</span></div>
                   <div><b>Sarvam Interaction ID:</b> <span class="text-mono text-graphite" id="disp_call_iid" style="font-size: 11px;">—</span></div>
                 </div>
@@ -156,7 +180,13 @@
             </div>
 
             <!-- MODE 2: Standard Structured Form -->
-            <div id="view_form">
+            <div id="view_form" style="display: none;">
+              <div style="background: var(--color-paper-dim); border: 1px solid var(--color-ink); padding: 8px 12px; margin-bottom: 14px; display: flex; justify-content: space-between; align-items: center; font-size: 12px;">
+                <span><b>Prefer to speak with an AI agent?</b></span>
+                <button type="button" class="btn btn-sm btn-secondary" onclick="setIntakeMode('call')" style="padding: 3px 8px; font-size: 11px;">
+                  📞 CALL DIRECTLY TO RAISE TICKET
+                </button>
+              </div>
               <form id="f">
                 <!-- Identity Row -->
                 <div class="form-grid-2">
@@ -541,7 +571,7 @@
         errBox.style.display = "block";
       } finally {
         btn.disabled = false;
-        btn.innerHTML = "<span>📞 CALL MY PHONE NOW (SARVAM AI)</span><span>→</span>";
+        btn.innerHTML = "<span>📞 CALL ME NOW TO RAISE TICKET (SARVAM AI)</span><span>→</span>";
       }
     };
 
