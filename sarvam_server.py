@@ -15,10 +15,11 @@ load_dotenv()
 
 # Optional integration with core Paytm-Mappa ticket store
 try:
-    from mappa import store as mappa_store, schema
+    from mappa import store as mappa_store, schema, pipeline
 except ImportError:
     mappa_store = None
     schema = None
+    pipeline = None
 
 SARVAM_API_KEY = os.getenv("SARVAM_API_KEY", "")
 ORG_ID = os.getenv("SARVAM_ORG_ID", "")
@@ -129,10 +130,10 @@ async def trigger_outbound_call(req: OutboundCallPayload):
     cust_name = req.customer_name
     summary = req.issue_summary
 
-    # Resolve from core ticket store if available
+    # Resolve from core ticket store if available, or auto-create a ticket if "NEW"
     if mappa_store:
         try:
-            t = mappa_store.get(req.ticket_id)
+            t = mappa_store.get(req.ticket_id) if (req.ticket_id and req.ticket_id not in ("NEW", "TKT-101")) else None
             if t:
                 if not target_phone:
                     target_phone = t.raised_by.phone
@@ -140,8 +141,34 @@ async def trigger_outbound_call(req: OutboundCallPayload):
                     cust_name = t.raised_by.name
                 if not summary:
                     summary = t.subject
-        except Exception:
-            pass
+            elif pipeline and schema:
+                # Auto-create ticket for new outbound call request
+                raw_phone = (target_phone or "9876543210").replace("+91", "").replace(" ", "").replace("-", "")
+                if len(raw_phone) > 10:
+                    raw_phone = raw_phone[-10:]
+                elif len(raw_phone) < 10:
+                    raw_phone = "9876543210"
+                
+                role_val = "customer"
+                if req.extra_variables and req.extra_variables.get("role") in ("merchant", "customer"):
+                    role_val = req.extra_variables["role"]
+
+                new_t = pipeline.raise_ticket(schema.TicketIn(
+                    channel="call",
+                    raised_by=schema.Party(
+                        role=role_val,
+                        name=cust_name or "Voice Caller",
+                        phone=raw_phone
+                    ),
+                    subject=summary or "Support dispute via Sarvam AI Voice Agent",
+                    description=f"Voice call requested to {target_phone or raw_phone}",
+                    ask="Autonomous resolution or human escalation via phone",
+                    transcript=[schema.Turn(speaker="customer", text=summary or "Voice call initiated")]
+                ))
+                req.ticket_id = new_t.id
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning("Could not auto-create ticket for voice call: %s", e)
 
     if not target_phone:
         target_phone = "+919876543210"
@@ -197,7 +224,7 @@ async def trigger_outbound_call(req: OutboundCallPayload):
         except Exception as e:
             raise HTTPException(status_code=502, detail=f"Sarvam Outbound API connection error: {e}")
 
-    interaction_id = res_json.get("interaction_id") or f"pending_{int(datetime.now(timezone.utc).timestamp())}"
+    interaction_id = res_json.get("interaction_id") or res_json.get("attempt_id") or f"call_{int(datetime.now(timezone.utc).timestamp())}"
 
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute("""
@@ -214,7 +241,7 @@ async def trigger_outbound_call(req: OutboundCallPayload):
         ))
         conn.commit()
 
-    if mappa_store and schema:
+    if mappa_store and schema and req.ticket_id.startswith("TKT-"):
         try:
             t = mappa_store.get(req.ticket_id)
             if t:
@@ -232,6 +259,7 @@ async def trigger_outbound_call(req: OutboundCallPayload):
         "interaction_id": interaction_id,
         "phone": target_phone,
         "ticket_id": req.ticket_id,
+        "agent_phone": AGENT_PHONE,
         "sarvam_response": res_json
     }
 

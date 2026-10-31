@@ -52,12 +52,12 @@
             <span class="telemetry-value text-mono">α ≤ 2.0%</span>
           </div>
           <div class="telemetry-cell">
-            <span class="telemetry-label">Ceiling</span>
-            <span class="telemetry-value text-mono">₹50,000</span>
-          </div>
-          <div class="telemetry-cell">
             <span class="telemetry-label">Sarvam Telephony</span>
             <span class="telemetry-value text-mono" style="color: #2e7d32;">ONLINE</span>
+          </div>
+          <div class="telemetry-cell">
+            <span class="telemetry-label">Agent Phone</span>
+            <span class="telemetry-value text-mono" style="font-size:13px;">+917965481865</span>
           </div>
         </div>
       </div>
@@ -72,17 +72,90 @@
           <div class="panel-header">
             <div class="panel-header-title">
               <span class="panel-num">01</span>
-              <span>Intake Method</span>
+              <span>Select Intake Method</span>
             </div>
-            <div style="display: flex; gap: 4px;">
-              <button type="button" class="btn btn-sm btn-primary" id="tab_btn_form" style="padding: 4px 10px;">STANDARD FORM</button>
-              <button type="button" class="btn btn-sm btn-secondary" id="tab_btn_ai" style="padding: 4px 10px;">⚡ SARVAM AI CHAT</button>
+            <div style="display: flex; gap: 4px; flex-wrap: wrap;">
+              <button type="button" class="btn btn-sm btn-secondary" id="tab_btn_call" style="padding: 4px 10px;">📞 1. AI VOICE CALL</button>
+              <button type="button" class="btn btn-sm btn-primary" id="tab_btn_form" style="padding: 4px 10px;">2. STANDARD FORM</button>
+              <button type="button" class="btn btn-sm btn-secondary" id="tab_btn_chat" style="padding: 4px 10px;">3. 💬 AI CHATBOT</button>
             </div>
           </div>
 
           <div class="panel-body">
             
-            <!-- MODE A: Standard Structured Form -->
+            <!-- MODE 1: Direct Outbound Voice Call via Sarvam AI Telephony -->
+            <div id="view_call" style="display: none;">
+              <div style="background: #EAF6DC; border: 2px solid #295007; padding: 14px 16px; margin-bottom: 16px;">
+                <div class="text-mono" style="font-weight: 700; font-size: 12px; color: #295007; margin-bottom: 4px;">
+                  📞 SARVAM AI VOICE TELEPHONY (SAMVAAD ENGINE)
+                </div>
+                <p style="font-size: 12px; line-height: 1.4;">
+                  Enter your phone number. Sarvam AI's voice agent (<b>+917965481865</b>) will place an outbound telephone call to your mobile device immediately. 
+                  Speak naturally in Hindi, English, or Hinglish to resolve settlements, refunds, or device disputes.
+                </p>
+              </div>
+
+              <div id="call_setup_form">
+                <div class="form-grid-2">
+                  <div class="form-group">
+                    <label class="field-label">Account Role <span class="req">*</span></label>
+                    <select id="v_role">
+                      <option value="merchant">Merchant (Partner)</option>
+                      <option value="customer">Customer (User)</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label class="field-label">Full Name <span class="req">*</span></label>
+                    <input id="v_name" required value="Amal Medicos" placeholder="Your name or business name">
+                  </div>
+                </div>
+
+                <div class="form-group">
+                  <label class="field-label">Mobile Phone Number (Will receive the call) <span class="req">*</span></label>
+                  <input id="v_phone" type="tel" required pattern="\+?\d{10,13}" value="9987695273" placeholder="10-digit mobile number" style="font-size: 15px; font-weight: 600;">
+                  <span class="helper-text">Make sure this phone is nearby to answer the call.</span>
+                </div>
+
+                <div class="form-group">
+                  <label class="field-label">Issue Summary (Topic for the AI Agent) <span class="req">*</span></label>
+                  <input id="v_summary" required minlength="3" value="Settlement of ₹12,400 not received" placeholder="e.g. Settlement of ₹12,400 not received in HDFC account">
+                </div>
+
+                <div style="margin-top: 18px;">
+                  <button type="button" class="btn btn-primary" id="btn_trigger_voice_call" style="width: 100%; padding: 12px 18px; font-size: 14px;">
+                    <span>📞 CALL MY PHONE NOW (SARVAM AI)</span>
+                    <span>→</span>
+                  </button>
+                  <div id="call_api_error" class="alert-error" style="display: none; margin-top: 10px;"></div>
+                </div>
+              </div>
+
+              <!-- Live Calling Status Banner -->
+              <div id="call_active_card" style="display: none; background: var(--color-paper); border: 2px solid var(--color-ink); padding: 16px; margin-top: 16px; box-shadow: var(--shadow-hard);">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                  <span class="badge badge-ai" style="padding: 4px 8px; font-size: 12px;">🟢 CALL DISPATCHED VIA SARVAM AI</span>
+                  <span class="text-mono" id="call_status_badge" style="font-size: 11px; font-weight: 700;">RINGING</span>
+                </div>
+                
+                <div style="font-size: 13px; line-height: 1.5; margin-bottom: 12px;">
+                  <div><b>Dialing Target:</b> <span class="text-mono" id="disp_call_phone" style="font-weight: 700;">—</span></div>
+                  <div><b>From Agent:</b> <span class="text-mono">+917965481865</span></div>
+                  <div><b>Linked Dispute Ticket:</b> <span class="text-mono" id="disp_call_ticket" style="font-weight: 700;">—</span></div>
+                  <div><b>Sarvam Interaction ID:</b> <span class="text-mono text-graphite" id="disp_call_iid" style="font-size: 11px;">—</span></div>
+                </div>
+
+                <div style="background: #FFF; border: 1px solid var(--color-ink); padding: 10px 12px; font-size: 12px;">
+                  📲 <b>Please pick up your phone when it rings!</b> When you speak, Sarvam's AI voice agent will automatically listen, verify policy terms, and record the call.
+                </div>
+
+                <div style="margin-top: 12px; display: flex; gap: 8px;">
+                  <button type="button" class="btn btn-secondary btn-sm" id="btn_check_call_status">CHECK CALL STATUS ↺</button>
+                  <button type="button" class="btn btn-secondary btn-sm" id="btn_new_call">NEW CALL</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- MODE 2: Standard Structured Form -->
             <div id="view_form">
               <form id="f">
                 <!-- Identity Row -->
@@ -117,8 +190,8 @@
                     <label class="field-label">Intake Channel <span class="req">*</span></label>
                     <select name="channel" id="f_channel">
                       <option value="manual">Manual Web Form</option>
+                      <option value="call">Voice Call (Sarvam AI Telephony)</option>
                       <option value="chatbot">Chatbot Assistant</option>
-                      <option value="call">Voice Call (Sarvam AI)</option>
                     </select>
                   </div>
                   <div class="form-group">
@@ -127,6 +200,19 @@
                       <option value="">Not Sure — Let Karma Classify</option>
                     </select>
                   </div>
+                </div>
+
+                <!-- Direct Phone Call Notice in Form -->
+                <div id="call_notice_box" style="display: none; background: #EAF6DC; border: 2px solid #295007; padding: 12px; margin-bottom: 14px;">
+                  <div style="font-weight: 700; font-size: 12px; color: #295007; margin-bottom: 4px;">
+                    📞 Direct Voice Call Selected
+                  </div>
+                  <div style="font-size: 12px; margin-bottom: 8px;">
+                    Would you like Sarvam AI (+917965481865) to call your mobile device right now to resolve this dispute?
+                  </div>
+                  <button type="button" class="btn btn-sm btn-primary" id="btn_trigger_call_from_form">
+                    CALL MY PHONE VIA SARVAM AI →
+                  </button>
                 </div>
 
                 <!-- Subject & Description -->
@@ -186,11 +272,11 @@
               </form>
             </div>
 
-            <!-- MODE B: Interactive Sarvam AI Clarity Chat Session -->
-            <div id="view_ai" style="display: none;">
+            <!-- MODE 3: Interactive Sarvam AI Clarity Chat Session -->
+            <div id="view_chat" style="display: none;">
               <div style="background: var(--color-paper); border: 1px solid var(--color-ink); padding: 12px 14px; margin-bottom: 16px;">
                 <div class="text-mono" style="font-weight: 700; font-size: 11px; color: var(--color-blueprint); margin-bottom: 4px;">
-                  🤖 SARVAM 105B CLARITY AGENT
+                  🤖 SARVAM 105B CLARITY CHATBOT
                 </div>
                 <p style="font-size: 12px;">
                   Explain your issue in natural language (Hindi, Hinglish, or English). 
@@ -212,21 +298,12 @@
                     <input id="ai_name" value="Amal Medicos">
                   </div>
                 </div>
-                <div class="form-grid-2">
-                  <div class="form-group">
-                    <label class="field-label">Phone Number</label>
-                    <input id="ai_phone" value="9876500002">
-                  </div>
-                  <div class="form-group">
-                    <label class="field-label">Channel Mode</label>
-                    <select id="ai_channel">
-                      <option value="call">Voice Call Turn</option>
-                      <option value="chatbot">Chatbot Turn</option>
-                    </select>
-                  </div>
+                <div class="form-group">
+                  <label class="field-label">Phone Number</label>
+                  <input id="ai_phone" value="9876500002">
                 </div>
                 <button type="button" class="btn btn-primary" id="btn_start_clarity" style="width: 100%; margin-top: 8px;">
-                  INITIALIZE SARVAM CLARITY SESSION ⚡
+                  INITIALIZE SARVAM CLARITY CHAT ⚡
                 </button>
               </div>
 
@@ -294,7 +371,7 @@
               AWAITING TICKET SUBMISSION
             </div>
             <p class="text-graphite" style="max-width: 400px; margin: 0 auto; font-size: 12px;">
-              Submit a dispute on the left or search your existing tickets below to view real-time Jev engine routing, policy compliance, and automated resolution logs.
+              Submit a dispute, request an AI phone call, or search your existing tickets below to view real-time Jev engine routing, policy compliance, and automated resolution logs.
             </p>
           </div>
         </section>
@@ -313,7 +390,7 @@
             <div class="form-grid-2" style="align-items: flex-end;">
               <div class="form-group" style="margin: 0;">
                 <label class="field-label">Search by Phone Number</label>
-                <input id="myphone" value="9876500001" placeholder="Enter phone number">
+                <input id="myphone" value="9987695273" placeholder="Enter phone number">
               </div>
               <div>
                 <button type="button" class="btn btn-secondary" id="btn_load_tickets" style="width: 100%;">
@@ -341,7 +418,7 @@
         <b>KARMA</b> // Paytm Precision Support & Decision Engine
       </div>
       <div>
-        Deterministic Clarity · Calibrated Conformal Risk Control · Sarvam AI Samvaad Integration
+        Deterministic Clarity · Calibrated Conformal Risk Control · Sarvam AI Outbound Telephony
       </div>
     </div>
   </footer>
@@ -378,17 +455,115 @@
     const errEl = document.getElementById("form_err");
 
     // Intake Mode Switching
-    document.getElementById("tab_btn_form").onclick = () => {
-      document.getElementById("view_form").style.display = "block";
-      document.getElementById("view_ai").style.display = "none";
-      document.getElementById("tab_btn_form").className = "btn btn-sm btn-primary";
-      document.getElementById("tab_btn_ai").className = "btn btn-sm btn-secondary";
+    function setIntakeMode(mode) {
+      document.getElementById("view_form").style.display = mode === "form" ? "block" : "none";
+      document.getElementById("view_call").style.display = mode === "call" ? "block" : "none";
+      document.getElementById("view_chat").style.display = mode === "chat" ? "block" : "none";
+
+      document.getElementById("tab_btn_form").className = mode === "form" ? "btn btn-sm btn-primary" : "btn btn-sm btn-secondary";
+      document.getElementById("tab_btn_call").className = mode === "call" ? "btn btn-sm btn-primary" : "btn btn-sm btn-secondary";
+      document.getElementById("tab_btn_chat").className = mode === "chat" ? "btn btn-sm btn-primary" : "btn btn-sm btn-secondary";
+    }
+
+    document.getElementById("tab_btn_form").onclick = () => setIntakeMode("form");
+    document.getElementById("tab_btn_call").onclick = () => setIntakeMode("call");
+    document.getElementById("tab_btn_chat").onclick = () => setIntakeMode("chat");
+
+    // Trigger call from within form if user switches channel to "call"
+    f.channel.onchange = () => {
+      const isCall = f.channel.value === "call";
+      document.getElementById("call_notice_box").style.display = isCall ? "block" : "none";
+      document.getElementById("tr_group").hidden = f.channel.value === "manual";
     };
-    document.getElementById("tab_btn_ai").onclick = () => {
-      document.getElementById("view_form").style.display = "none";
-      document.getElementById("view_ai").style.display = "block";
-      document.getElementById("tab_btn_form").className = "btn btn-sm btn-secondary";
-      document.getElementById("tab_btn_ai").className = "btn btn-sm btn-primary";
+
+    document.getElementById("btn_trigger_call_from_form").onclick = () => {
+      document.getElementById("v_phone").value = f.phone.value;
+      document.getElementById("v_name").value = f.name.value;
+      document.getElementById("v_role").value = f.role.value;
+      document.getElementById("v_summary").value = f.subject.value || "Support dispute";
+      setIntakeMode("call");
+      document.getElementById("btn_trigger_voice_call").click();
+    };
+
+    // ==========================================
+    // SARVAM AI VOICE TELEPHONY (OUTBOUND CALL)
+    // ==========================================
+    let LAST_DISPATCHED_TICKET = null;
+    let LAST_DISPATCHED_IID = null;
+
+    document.getElementById("btn_trigger_voice_call").onclick = async () => {
+      const btn = document.getElementById("btn_trigger_voice_call");
+      const errBox = document.getElementById("call_api_error");
+      const phoneInput = document.getElementById("v_phone");
+      const phone = phoneInput.value.trim();
+      const name = document.getElementById("v_name").value.trim() || "Valued Customer";
+      const role = document.getElementById("v_role").value;
+      const summary = document.getElementById("v_summary").value.trim() || "Support inquiry";
+
+      errBox.style.display = "none";
+
+      if (!phone) {
+        errBox.textContent = "Please enter a valid phone number.";
+        errBox.style.display = "block";
+        return;
+      }
+
+      btn.disabled = true;
+      btn.innerHTML = "DISPATCHING CALL VIA SARVAM TELEPHONY...";
+
+      try {
+        const res = await api("/api/calls/outbound", "POST", {
+          user_phone_number: phone,
+          customer_name: name,
+          issue_summary: summary,
+          ticket_id: "NEW",
+          extra_variables: { role: role }
+        });
+
+        LAST_DISPATCHED_TICKET = res.ticket_id;
+        LAST_DISPATCHED_IID = res.interaction_id;
+
+        document.getElementById("disp_call_phone").textContent = res.phone;
+        document.getElementById("disp_call_ticket").textContent = res.ticket_id;
+        document.getElementById("disp_call_iid").textContent = res.interaction_id;
+        document.getElementById("call_status_badge").textContent = "DISPATCHED";
+
+        document.getElementById("call_setup_form").style.display = "none";
+        document.getElementById("call_active_card").style.display = "block";
+
+        // Load the created ticket immediately into the right panel!
+        if (res.ticket_id && res.ticket_id.startsWith("TKT-")) {
+          loadAndInspect(res.ticket_id);
+          document.getElementById("myphone").value = phone.replace("+91", "");
+        }
+      } catch (x) {
+        errBox.textContent = "Voice Call Dispatch Failed: " + x.message;
+        errBox.style.display = "block";
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = "<span>📞 CALL MY PHONE NOW (SARVAM AI)</span><span>→</span>";
+      }
+    };
+
+    document.getElementById("btn_check_call_status").onclick = async () => {
+      if (!LAST_DISPATCHED_TICKET) return;
+      try {
+        const calls = await api(`/api/calls/ticket/${LAST_DISPATCHED_TICKET}`);
+        if (calls.length) {
+          const latest = calls[0];
+          document.getElementById("call_status_badge").textContent = `${latest.status} (${latest.duration_seconds || 0}s)`;
+          loadAndInspect(LAST_DISPATCHED_TICKET);
+        } else {
+          document.getElementById("call_status_badge").textContent = "IN PROGRESS";
+        }
+      } catch (e) {
+        console.warn("Call status check failure:", e);
+      }
+    };
+
+    document.getElementById("btn_new_call").onclick = () => {
+      document.getElementById("call_setup_form").style.display = "block";
+      document.getElementById("call_active_card").style.display = "none";
     };
 
     function renderField(k, isReq) {
@@ -603,11 +778,6 @@
       panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
     }
 
-    // Channel changes: toggle transcript textarea
-    f.channel.onchange = () => {
-      document.getElementById("tr_group").hidden = f.channel.value === "manual";
-    };
-
     // Role changes: toggle merchant id requirement
     document.getElementById("f_role").onchange = (e) => {
       const isMerchant = e.target.value === "merchant";
@@ -639,7 +809,7 @@
           phone: f.phone.value,
           merchant_id: f.role.value === "merchant" ? (f.merchant_id.value || null) : null
         },
-        transcript: f.channel.value === "manual" ? [] : parseTranscript(f.transcript.value)
+        transcript: f.channel.value === "manual" ? [] : (parseTranscript(f.transcript.value).length ? parseTranscript(f.transcript.value) : [{speaker: "customer", text: f.subject.value}])
       };
 
       try {
@@ -657,7 +827,7 @@
     };
 
     // ==========================================
-    // SARVAM AI CLARITY CONVERSATION HANDLERS
+    // SARVAM AI CLARITY CHATBOT HANDLERS
     // ==========================================
     let ACTIVE_CLARITY_ID = null;
     let CLARITY_TURNS = 0;
@@ -665,15 +835,14 @@
     document.getElementById("btn_start_clarity").onclick = async () => {
       const btn = document.getElementById("btn_start_clarity");
       btn.disabled = true;
-      btn.textContent = "INITIALIZING SESSION...";
+      btn.textContent = "INITIALIZING CHAT...";
       try {
         const role = document.getElementById("ai_role").value;
         const name = document.getElementById("ai_name").value.trim() || "Customer";
         const phone = document.getElementById("ai_phone").value.trim() || "9876500002";
-        const channel = document.getElementById("ai_channel").value;
 
         const res = await api("/api/clarity/sessions", "POST", {
-          channel: channel,
+          channel: "chatbot",
           raised_by: { role, name, phone },
           language: "hi"
         });
@@ -687,15 +856,15 @@
         document.getElementById("clarity_calls_counter").textContent = "Turns: 0 / 5";
         document.getElementById("clarity_messages").innerHTML = `
           <div class="transcript-turn speaker-agent">
-            <span class="speaker-tag">Sarvam AI Assistant (${channel.toUpperCase()})</span>
-            <span>Namaste ${esc(name)}! I'm your Paytm Support AI. Please describe what issue you are facing today.</span>
+            <span class="speaker-tag">Sarvam AI Chatbot</span>
+            <span>Namaste ${esc(name)}! How can I help you with your Paytm payments, settlements, or devices today?</span>
           </div>
         `;
       } catch (x) {
         alert("Failed to initialize Sarvam Clarity session: " + x.message);
       } finally {
         btn.disabled = false;
-        btn.textContent = "INITIALIZE SARVAM CLARITY SESSION ⚡";
+        btn.textContent = "INITIALIZE SARVAM CLARITY CHAT ⚡";
       }
     };
 
