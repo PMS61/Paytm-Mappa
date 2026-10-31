@@ -24,7 +24,7 @@ registered business or owner name, before any settlement is sent to it.
 
 ### P-SET-05 · Account change after a new-device login
 route: human
-trigger: (new|naya|another|dusre|other) (phone|mobile|device).{0,40}(login|logged|account)|(login|logged).{0,30}(new|naya|another|other) (phone|mobile|device)
+trigger: (new|naya|naye|nayi|another|dusre|doosre|other) (phone|mobile|device).{0,40}(login|logged|account)|(login|logged).{0,30}(new|naya|naye|nayi|another|dusre|other) (phone|mobile|device)
 A bank account added or changed within 72 hours of a login from a new device, or a password reset, is a possible
 account takeover. A risk specialist must review it; no settlement is sent to the new account until then.
 

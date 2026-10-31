@@ -19,6 +19,7 @@ INJECTION = [
     r"\bvergiss\b|ignorieren sie|abweichend (zu|von) (den )?vorherigen|\bolvid[ae]\b", r"repeat after me|\byou are now\b",
     r"(print|reveal|show|repeat)\b.{0,20}\b(your|the above|initial|system) (prompt|instructions)",
     r"\bwhitelist", r"must not escalate|do not escalate|don'?t escalate",
+    r"\b(verification|verify|penny[- ]?drop|kyc|otp|security|checks?)\b.{0,20}\b(skip|bypass|hata|hatao|mat karo|nahi karo|band karo)\b",
     r"\bbina\b.{0,20}\b(otp|verification|verify|penny|kyc|check|escalation)", r"(zaroorat|jarurat|zarurat) nahi",
     r"(instructions?|niyam|rules?)\b.{0,15}\b(ignore|bhool)", r"अनदेखा", r"नज़रअंदाज़|नजरअंदाज", r"बायपास",
     r"बिना\s*\S*\s*(OTP|सत्यापन|वेरिफिकेशन|पेनी|केवाईसी|जांच|जाँच)",

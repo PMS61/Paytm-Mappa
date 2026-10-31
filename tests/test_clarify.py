@@ -286,3 +286,28 @@ def test_vague_first_turn_drafted_as_other_keeps_clarifying():
     vague = dict(ASKING, ticket={"category": "other", "subject": "unclear", "details": {}})
     out = clarify.step(_session().id, "hello, mujhe ek problem hai", llm=FakeLLM(vague))
     assert out["status"] == "needs_clarification" and out["need_human"] is False
+
+
+def test_required_gate_concludes_when_hinglish_gives_every_required_detail(env):
+    """The model kept asking although the customer had answered; required details now decide."""
+    asking = dict(ASKING, ticket={"category": "settlement", "subject": "settlement", "details": {"amount": 8400, "bank_name": "HDFC"}},
+                  clarifications=["How many hours ago did you notice?"])
+    out = clarify.step(_session().id, "8400 ka settlement HDFC mein nahi aaya, maine koi account change nahi kiya", llm=FakeLLM(asking))
+    assert out["status"] == "done" and env and env[0].details.account_changed is False
+
+
+def test_required_gate_asks_only_for_missing_required_details():
+    asking = dict(ASKING, ticket={"category": "device", "subject": "soundbox", "details": {"device_issue": "no sound"}},
+                  clarifications=["What is your merchant ID?", "Any error code?"])
+    out = clarify.step(_session().id, "soundbox se awaaz nahi aa rahi", llm=FakeLLM(asking))
+    assert out["status"] == "needs_clarification"
+    assert out["clarifications"] == [clarify.ASK["offline_days"]]
+
+
+def test_details_carry_across_turns():
+    s = _session()
+    first = dict(ASKING, ticket={"category": "refund", "subject": "refund", "details": {"amount": 450}})
+    clarify.step(s.id, "customer ko refund karna hai", llm=FakeLLM(first))
+    second = dict(ASKING, ticket={"category": "refund", "subject": "refund", "details": {"txn_id": "T88213"}})
+    clarify.step(s.id, "txn T88213", llm=FakeLLM(second))
+    assert sessions.get(s.id).draft["details"]["amount"] == 450

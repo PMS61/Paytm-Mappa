@@ -182,3 +182,4 @@ class ClaritySession(BaseModel):
     ticket_id: str | None = None
     escalation_reason: str | None = None   # set when status is escalated
     mcp: dict | None = None                # last capability.check of the scenario (can the MCP tools solve it?)
+    draft: dict = {}                       # category + details extracted so far, carried across turns

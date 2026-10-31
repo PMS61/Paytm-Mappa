@@ -13,6 +13,7 @@ def _reply(content) -> bytes:
 @pytest.fixture
 def key(monkeypatch):
     monkeypatch.setenv("SARVAM_API_KEY", "test-key")
+    monkeypatch.delenv("SARVAM_LLM_API_KEY", raising=False)
     monkeypatch.delenv("SARVAM_MODEL", raising=False)
 
 
@@ -27,7 +28,8 @@ def test_success_returns_parsed_object_and_sends_expected_request(key, monkeypat
     out = chat([{"role": "user", "content": "hi"}])
     assert out == {"clarification_needed": True, "clarifications": ["Which amount?"]}
     assert seen["url"] == "https://api.sarvam.ai/v1/chat/completions"
-    assert seen["body"]["model"] == "sarvam-105b"
+    assert seen["body"]["model"] == "sarvam-105b-conversations"
+    assert seen["body"]["reasoning_effort"] == "low"
     assert seen["body"]["temperature"] == 0.2
     assert seen["body"]["response_format"] == {"type": "json_object"}
     assert seen["headers"]["api-subscription-key"] == "test-key"
@@ -127,6 +129,7 @@ def test_timeout_is_30_seconds_on_the_real_request(key, monkeypatch):
 
 def test_missing_key_raises_without_network(monkeypatch):
     monkeypatch.delenv("SARVAM_API_KEY", raising=False)
+    monkeypatch.delenv("SARVAM_LLM_API_KEY", raising=False)
 
     def never(u, b, h):
         raise AssertionError("network must not be touched without a key")

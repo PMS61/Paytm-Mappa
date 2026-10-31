@@ -3,7 +3,8 @@
     chat(messages)   POST {SARVAM_URL}/chat/completions, returns the reply's JSON object
     SarvamError      missing key, HTTP / network error, timeout, or a reply that is not a JSON object
 
-Config by env: SARVAM_API_KEY (required), SARVAM_MODEL (default sarvam-105b).
+Config by env: SARVAM_LLM_API_KEY (a Sarvam API key; falls back to SARVAM_API_KEY), SARVAM_MODEL (default sarvam-105b-conversations: ~1 s a turn; sarvam-105b reasons for ~25 s, too slow for a voice tool).
+The Voice Agents key (sk_samvaad_...) used by sarvam_server.py does not work for chat completions (HTTP 403).
 """
 
 import http.client
@@ -31,14 +32,18 @@ def _post(url: str, body: dict, headers: dict) -> bytes:
 
 def chat(messages: list[dict]) -> dict:
     """Send `messages` to Sarvam in JSON mode and return the parsed JSON object of the reply."""
-    key = os.environ.get("SARVAM_API_KEY", "").strip()
+    key = (os.environ.get("SARVAM_LLM_API_KEY") or os.environ.get("SARVAM_API_KEY", "")).strip()
     if not key:
-        raise SarvamError("SARVAM_API_KEY is not set")
+        raise SarvamError("SARVAM_LLM_API_KEY (or SARVAM_API_KEY) is not set")
     body = {
-        "model": os.environ.get("SARVAM_MODEL", "sarvam-105b"),
+        "model": os.environ.get("SARVAM_MODEL", "sarvam-105b-conversations"),
         "messages": messages,
         "temperature": 0.2,
         "response_format": {"type": "json_object"},
+        # sarvam-105b reasons before answering; on a voice call that costs seconds and can use up the token budget,
+        # leaving no content. Low effort plus room for the JSON keeps a turn well inside a 30 s tool timeout.
+        "reasoning_effort": os.environ.get("SARVAM_REASONING_EFFORT", "low"),
+        "max_tokens": 4096,
     }
     headers = {
         "Content-Type": "application/json",
