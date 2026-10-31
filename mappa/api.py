@@ -32,6 +32,14 @@ app = FastAPI(title="Paytm support: tickets, clarity, Jev")
 WEB = store.ROOT / "web"
 app.mount("/static", StaticFiles(directory=WEB), name="static")
 
+# Mount Sarvam Voice & Telephony router
+try:
+    import sarvam_server
+    app.include_router(sarvam_server.router)
+except Exception as e:
+    logging.getLogger(__name__).warning("Could not include sarvam_server router: %s", e)
+
+
 
 @app.get("/")
 def customer_page():

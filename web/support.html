@@ -1,126 +1,1145 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Support Desk</title>
-<link rel="stylesheet" href="/static/base.css">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>KARMA // Support Operations & Triage Desk</title>
+  <link rel="stylesheet" href="/static/base.css">
 </head>
 <body>
-<header><b>Support desk</b><nav><a href="#" data-tab="queue">Queue</a><a href="#" data-tab="review">Review</a><a href="#" data-tab="log">Log</a><a href="/">Customer portal</a></nav></header>
-<main>
-<section id="queue">
-  <div class="row"><label>Status<select id="st"><option value="">All</option>
-    <option>needs_info</option><option>human_queue</option><option>ai_queue</option><option>in_progress</option><option>resolved</option><option>closed</option></select></label>
-    <label>Route<select id="rt"><option value="">All</option><option>AI</option><option>HUMAN</option></select></label></div>
-  <div class="grid2"><div id="list"></div><div id="detail" class="mute">Select a ticket.</div></div>
-</section>
-<section id="log" hidden></section>
-</main>
-<script src="/static/common.js"></script>
-<script>
-let TAB = "queue", SEL = null;
-const $ = id => document.getElementById(id);
 
-async function loadList() {
-  const q = TAB === "review" ? "review=true" : `status=${$("st").value}&route=${$("rt").value}`;
-  const ts = await api(`/api/tickets?${q}`);
-  $("list").innerHTML = ts.length ? `<table><tr><th>Ticket</th><th>Scenario</th><th>Route</th><th>Status</th></tr>${ts.map(t => `
-    <tr class="click ${t.id === SEL ? "sel" : ""}" data-id="${t.id}"><td>${t.id}<div class="mute">${esc(t.channel)} · ${when(t.created_at)}</div></td>
-    <td>${esc(t.clarity?.scenario_title)}<div class="mute">${esc(t.subject)}</div></td>
-    <td class="${t.clarity?.decision.route}">${t.clarity?.decision.route || ""}${t.autopilot ? `<div class="mute">auto: ${t.autopilot.outcome}</div>` : ""}</td>
-    <td>${t.status.replace("_", " ")}${t.feedback ? `<div class="mute">${t.feedback.verdict.replace(/_/g, " ")}</div>` : ""}</td></tr>`).join("")}</table>`
-    : `<p class="mute">${TAB === "review" ? "Nothing waiting for review." : "No tickets."}</p>`;
-  for (const tr of document.querySelectorAll("tr.click")) tr.onclick = () => { SEL = tr.dataset.id; loadList(); show(SEL); };
-}
+  <!-- Site Header -->
+  <header class="site-header">
+    <div class="header-inner">
+      <div class="brand-block">
+        <span class="brand-mark">KARMA</span>
+        <div class="brand-title">
+          SUPPORT OPERATIONS
+          <span class="brand-sub">Paytm Triage & Learning Core</span>
+        </div>
+      </div>
+      <nav class="nav-cluster">
+        <button type="button" class="nav-link active" data-tab="queue">Triage Queue</button>
+        <button type="button" class="nav-link" data-tab="review">Pending Review <span id="review_counter" class="badge badge-ai" style="padding:1px 5px; font-size:10px; margin-left:4px; display:none;">0</span></button>
+        <button type="button" class="nav-link" data-tab="calls">Voice Telephony (Sarvam)</button>
+        <button type="button" class="nav-link" data-tab="log">Log & Learning</button>
+        <a href="/" class="nav-link">Customer Portal ↗</a>
+      </nav>
+      <div class="header-status">
+        <span class="status-dot"></span>
+        <span id="ops_status_label">OPS // READY</span>
+      </div>
+    </div>
+  </header>
 
-const kv = o => `<table>${Object.entries(o).filter(([, v]) => v !== null && v !== "" && !(Array.isArray(v) && !v.length))
-  .map(([k, v]) => `<tr><th>${esc(k.replace(/_/g, " "))}</th><td>${esc(typeof v === "object" ? JSON.stringify(v) : v)}</td></tr>`).join("")}</table>`;
+  <!-- App Shell -->
+  <main class="app-shell">
 
-async function show(id) {
-  const t = await api(`/api/tickets/${id}`), c = t.clarity, d = c.decision, a = t.autopilot;
-  const answers = Object.entries(d.answers).map(([k, x]) => `<tr><th>${k}</th><td>${esc(typeof x.answer === "number" ? x.answer.toFixed(2) : x.answer)}</td>
-    <td class="mute">${esc(Object.entries(x.probabilities).map(([o, p]) => `${o} ${p.toFixed(2)}`).join(" · "))}</td></tr>`).join("");
-  const s = c.suggestion;
-  $("detail").className = "";
-  $("detail").innerHTML = `<h2>${t.id} <span class="tag">${t.status.replace("_", " ")}</span></h2>
-    <p><b>${esc(t.subject)}</b><br>${esc(t.raised_by.name)} (${t.raised_by.role}) · ${esc(t.raised_by.phone)} · via ${t.channel}</p>
-    ${t.description ? `<p>${esc(t.description)}</p>` : ""}
-    ${t.transcript.length ? `<h3>Transcript</h3><pre>${t.transcript.map(x => `${x.speaker}: ${esc(x.text)}`).join("\n")}</pre>` : ""}
-    <h3>Decision: <span class="${d.route}">${d.route}</span></h3>
-    <p>${esc(d.why)}</p>${d.reasons.length > 1 ? `<ul>${d.reasons.slice(1).map(r => `<li>${esc(r)}</li>`).join("")}</ul>` : ""}
-    <p class="mute">λ̂ ${d.lam.toFixed(3)} · α ${d.alpha} · ${esc(d.model)} · ${d.latency_ms} ms</p>
-    <table>${answers}</table>
-    ${a ? `<h3>Autopilot: ${a.outcome}</h3><p>${esc(a.summary)}</p>
-      <table><tr><th>Tool (MCP: ${esc(a.server)})</th><th>Why</th><th>Result</th></tr>${a.log.map(x => `<tr><td>${x.tool}<div class="mute">${esc(JSON.stringify(x.args))}</div></td>
-      <td>${esc(x.why)}</td><td class="mute">${esc(JSON.stringify(x.result))}</td></tr>`).join("")}</table>` : ""}
-    ${s ? `<h3>Suggestion <span class="mute">(${esc(s.basis)})</span></h3><ol>${s.do.map(x => `<li>${esc(x)}</li>`).join("")}</ol>
-      ${s.similar.length ? `<p class="mute">From ${s.similar.map(x => `${x.ticket_id} (sim ${x.similarity})`).join(", ")}</p>` : ""}` : ""}
-    <h3>Clarity</h3>
-    ${kv({category: `${c.category} (${c.category_source})`, scenario: c.scenario, action: `${c.action.code}: ${c.action.summary}`,
-      money_moving: c.action.money_moving, missing: c.details_missing, recovered_from_text: c.details_recovered,
-      guard_hits: c.signals.guard_hits, secret_removed: c.signals.secret_removed || null, pii_redacted: c.signals.pii_redacted || null})}
-    <h3>Details</h3>${kv(c.details)}
-    <h3>Policies</h3>${[...c.policy_holds.map(p => ({...p, hold: true})), ...c.policies].map(p => `<p><b>${p.id}</b> ${esc(p.title)}
-      ${p.hold ? '<span class="tag HUMAN">holds for a human</span>' : ""}<br><span class="mute">${esc(p.text)}</span></p>`).join("")}
-    ${t.resolution ? `<h3>Resolution</h3><p>${esc(t.resolution)}</p>` : ""}
-    <h3>Update</h3>
-    <form id="upd"><label>Resolution (what was done)<textarea name="resolution" rows="2"></textarea></label>
-      <div class="row"><label>Status<select name="status"><option value="">(unchanged)</option><option>in_progress</option><option>resolved</option><option>closed</option></select></label>
-      <label>Note<input name="note"></label></div><button>Save</button> <span class="err" id="uerr"></span></form>
-    ${["resolved", "closed"].includes(t.status) && !t.feedback ? `
-    <h3>Review: was the route right?</h3>
-    <form id="fb">
-      <label class="check"><input type="radio" name="verdict" value="correct" required> Correct: ${d.route === "AI" ? "AI was enough" : "it needed a human"}</label>
-      ${d.route === "AI" ? `<label class="check"><input type="radio" name="verdict" value="needed_human"> Wrong: it needed a human</label>`
-        : `<label class="check"><input type="radio" name="verdict" value="ai_could_resolve"> Wrong: AI could have resolved it</label>`}
-      <label class="check"><input type="checkbox" name="worked" checked> The resolution fixed the customer's problem</label>
-      <label>Note<input name="note"></label><button>Submit feedback</button> <span class="err" id="ferr"></span></form>` : ""}
-    ${t.feedback ? `<h3>Feedback</h3><p>${t.feedback.verdict.replace(/_/g, " ")} · resolution ${t.feedback.resolution_worked ? "worked" : "did not work"} ${esc(t.feedback.note || "")}</p>` : ""}
-    <h3>History</h3><table>${t.history.map(h => `<tr><td class="mute">${when(h.at)}</td><td>${h.by}</td><td>${h.status}</td><td>${esc(h.note)}</td></tr>`).join("")}</table>`;
-  $("upd").onsubmit = async e => {
-    e.preventDefault();
-    const f = e.target;
-    try {
-      await api(`/api/tickets/${id}`, "PATCH", {by: "support", status: f.status.value || null, resolution: f.resolution.value || null, note: f.note.value || null});
-      loadList(); show(id);
-    } catch (x) { $("uerr").textContent = x.message; }
-  };
-  if ($("fb")) $("fb").onsubmit = async e => {
-    e.preventDefault();
-    const f = e.target;
-    try {
-      await api(`/api/tickets/${id}/feedback`, "POST", {verdict: f.verdict.value, resolution_worked: f.worked.checked, note: f.note.value || null});
-      loadList(); show(id);
-    } catch (x) { $("ferr").textContent = x.message; }
-  };
-}
+    <!-- Top Telemetry Ribbon -->
+    <div class="hero-disruption">
+      <div class="hero-plane" style="padding: 16px 24px;">
+        <div>
+          <div class="hero-meta">
+            <span class="tag-indicator">TELEMETRY</span>
+            <span>REAL-TIME DISPUTE TRIAGE & CALIBRATED ROUTING</span>
+          </div>
+          <div style="font-family: var(--font-display); font-size: 20px; font-weight: 700; color: var(--color-ink);" id="tab_title_heading">
+            ACTIVE TRIAGE QUEUE
+          </div>
+        </div>
+        <div class="hero-telemetry" id="top_telemetry">
+          <div class="telemetry-cell">
+            <span class="telemetry-label">Threshold λ̂</span>
+            <span class="telemetry-value text-mono" id="stat_lam">—</span>
+          </div>
+          <div class="telemetry-cell">
+            <span class="telemetry-label">Risk Target α</span>
+            <span class="telemetry-value text-mono">0.020 (2%)</span>
+          </div>
+          <div class="telemetry-cell">
+            <span class="telemetry-label">Verdicts</span>
+            <span class="telemetry-value text-mono" id="stat_n_verdicts">0</span>
+          </div>
+          <div class="telemetry-cell">
+            <span class="telemetry-label">Revocations</span>
+            <span class="telemetry-value text-mono" id="stat_revoked" style="color: #2e7d32;">0</span>
+          </div>
+        </div>
+      </div>
+    </div>
 
-async function loadLog() {
-  const L = await api("/api/log"), s = L.learning;
-  $("log").innerHTML = `<h2>Learning</h2>
-    <p>λ̂ now <b>${s.lam.toFixed(4)}</b> (trained ${s.lam_trained.toFixed(4)}) from ${s.n_feedback} verdicts.
-      ${Object.keys(s.revoked).length ? "" : "No scenario revoked."}</p>
-    ${Object.entries(s.revoked).map(([k, v]) => `<p class="HUMAN">AI revoked for ${esc(k)}: ${esc(v)}</p>`).join("")}
-    ${Object.keys(s.scenarios).length ? `<table><tr><th>Scenario</th><th>Good</th><th>Bad</th><th>P(AI error &gt; 10%)</th></tr>
-      ${Object.entries(s.scenarios).map(([k, x]) => `<tr><td>${esc(k)}</td><td>${x.good}</td><td>${x.bad}</td><td>${x.p_err_above_target}</td></tr>`).join("")}</table>` : ""}
-    <h2>Feedback</h2>${L.feedback.length ? `<table><tr><th>When</th><th>Ticket</th><th>Scenario</th><th>Route</th><th>Verdict</th><th>P(ai)</th></tr>
-      ${L.feedback.map(f => `<tr><td class="mute">${when(f.at)}</td><td>${f.ticket_id}</td><td>${esc(f.scenario)}</td><td class="${f.route}">${f.route}</td>
-      <td>${f.verdict.replace(/_/g, " ")}</td><td>${f.p_ai.toFixed(3)}</td></tr>`).join("")}</table>` : `<p class="mute">No feedback yet.</p>`}
-    <h2>Decisions</h2><table><tr><th>When</th><th>Ticket</th><th>Scenario</th><th>Route</th><th>Why</th><th>Autopilot</th><th>Verdict</th></tr>
-      ${L.decisions.map(x => `<tr><td class="mute">${when(x.at)}</td><td>${x.ticket_id}</td><td>${esc(x.scenario)}</td><td class="${x.route}">${x.route}</td>
-      <td>${esc(x.why)}</td><td>${x.autopilot || ""}</td><td>${(x.verdict || "").replace(/_/g, " ")}</td></tr>`).join("")}</table>`;
-}
+    <!-- TAB 1 & 2: QUEUE & REVIEW -->
+    <section id="section_queue">
+      <!-- Filter Bar -->
+      <div class="panel-sheet" style="padding: 12px 18px; margin-bottom: 20px;" id="filter_row">
+        <div style="display: flex; gap: 16px; align-items: flex-end; flex-wrap: wrap;">
+          <div class="form-group" style="margin: 0; min-width: 170px;">
+            <label class="field-label">Filter by Status</label>
+            <select id="st">
+              <option value="">All Statuses</option>
+              <option value="needs_info">needs_info (Missing facts)</option>
+              <option value="human_queue">human_queue (Assigned to humans)</option>
+              <option value="ai_queue">ai_queue (Pending Autopilot)</option>
+              <option value="in_progress">in_progress (Under investigation)</option>
+              <option value="resolved">resolved (Work completed)</option>
+              <option value="closed">closed (Fully finalized)</option>
+            </select>
+          </div>
+          <div class="form-group" style="margin: 0; min-width: 150px;">
+            <label class="field-label">Filter by Route</label>
+            <select id="rt">
+              <option value="">All Routes</option>
+              <option value="AI">AI Autopilot</option>
+              <option value="HUMAN">Human Staff</option>
+            </select>
+          </div>
+          <div class="form-group" style="margin: 0; flex: 1; min-width: 200px;">
+            <label class="field-label">Search Subject / Customer / ID</label>
+            <input type="text" id="search_box" placeholder="Type to filter list...">
+          </div>
+          <div>
+            <button type="button" class="btn btn-secondary btn-sm" id="btn_refresh" style="height: 38px;">
+              REFRESH
+            </button>
+          </div>
+        </div>
+      </div>
 
-function tab(name) {
-  TAB = name;
-  $("queue").hidden = name === "log"; $("log").hidden = name !== "log";
-  document.querySelector("#queue .row").hidden = name === "review";
-  name === "log" ? loadLog() : loadList();
-}
-for (const a of document.querySelectorAll("[data-tab]")) a.onclick = e => { e.preventDefault(); tab(a.dataset.tab); };
-$("st").onchange = $("rt").onchange = loadList;
-tab("queue");
-</script>
+      <!-- 2-Column Split View: List on Left, Detail on Right -->
+      <div class="asym-grid">
+
+        <!-- Left: Ticket List -->
+        <div class="panel-sheet">
+          <div class="panel-header">
+            <div class="panel-header-title">
+              <span class="panel-num">LIST</span>
+              <span id="list_heading_label">Tickets</span>
+            </div>
+            <span class="badge badge-neutral text-mono" id="list_count_badge">0 items</span>
+          </div>
+          <div id="list" style="max-height: 750px; overflow-y: auto;">
+            <!-- Rendered by loadList() -->
+          </div>
+        </div>
+
+        <!-- Right: Ticket Detail Inspector -->
+        <div class="panel-sheet" id="detail_panel">
+          <div class="panel-header">
+            <div class="panel-header-title">
+              <span class="panel-num">INSPECTOR</span>
+              <span>Ticket Diagnostic & Action</span>
+            </div>
+            <span class="badge badge-neutral" id="inspector_tag">STANDBY</span>
+          </div>
+          <div class="panel-body" id="detail">
+            <div style="text-align: center; padding: 60px 20px;">
+              <div style="font-family: var(--font-display); font-size: 16px; font-weight: 700; margin-bottom: 8px;">
+                SELECT A TICKET TO INSPECT
+              </div>
+              <p class="text-graphite text-mono" style="font-size: 12px; max-width: 380px; margin: 0 auto;">
+                Choose an item from the queue on the left to examine Jev calibrated decision probabilities, policy citations, MCP autopilot logs, or to execute manual resolution.
+              </p>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- TAB 3: SARVAM VOICE CALLS & TELEPHONY -->
+    <section id="section_calls" style="display: none;">
+      <div class="panel-sheet" style="margin-bottom: 24px;">
+        <div class="panel-header">
+          <div class="panel-header-title">
+            <span class="panel-num">VOICE</span>
+            <span>Sarvam Inbound/Outbound Telephony & Call Recordings</span>
+          </div>
+          <div style="display: flex; gap: 10px; align-items: center;">
+            <button type="button" class="btn btn-primary btn-sm" id="btn_sync_calls">SYNC FROM SARVAM CLOUD ↺</button>
+          </div>
+        </div>
+        <div class="panel-body">
+          <p class="text-graphite" style="font-size: 12px; margin-bottom: 16px;">
+            Inbound and outbound voice interactions handled via Sarvam AI voice agents (Samvaad platform).
+            Transcripts, audio recordings, and live call transfer events are synced and linked to dispute tickets.
+          </p>
+          <div id="calls_table_wrap">
+            <div class="text-mono text-graphite" style="padding: 20px;">LOADING VOICE CALL LOGS...</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 4: LOG & LEARNING -->
+    <section id="section_log" style="display: none;">
+      <div style="display: flex; flex-direction: column; gap: 24px;">
+
+        <!-- Learning & Conformal Calibration Panel -->
+        <div class="panel-sheet">
+          <div class="panel-header">
+            <div class="panel-header-title">
+              <span class="panel-num">L1</span>
+              <span>Conformal Risk Calibration & Bayesian Scenario Tracking</span>
+            </div>
+            <span class="badge badge-ai">ACTIVE LEARNING</span>
+          </div>
+          <div class="panel-body" id="learning_metrics_body">
+            <!-- Rendered by loadLog() -->
+          </div>
+        </div>
+
+        <!-- Feedback Log Panel -->
+        <div class="panel-sheet">
+          <div class="panel-header">
+            <div class="panel-header-title">
+              <span class="panel-num">L2</span>
+              <span>Support Staff Feedback & Routing Verdicts</span>
+            </div>
+            <span class="badge badge-neutral">HUMAN-IN-THE-LOOP AUDIT</span>
+          </div>
+          <div class="panel-body" style="padding: 0;">
+            <div id="feedback_table_wrap">
+              <!-- Rendered by loadLog() -->
+            </div>
+          </div>
+        </div>
+
+        <!-- Decisions Feed Panel -->
+        <div class="panel-sheet">
+          <div class="panel-header">
+            <div class="panel-header-title">
+              <span class="panel-num">L3</span>
+              <span>Jev Routing Decisions Stream</span>
+            </div>
+            <span class="badge badge-neutral">INFERENCE LOG</span>
+          </div>
+          <div class="panel-body" style="padding: 0;">
+            <div id="decisions_table_wrap">
+              <!-- Rendered by loadLog() -->
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Footer -->
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <div>
+        <b>KARMA</b> // Support Operations & Adaptive Governance
+      </div>
+      <div>
+        Conformal Risk α=2% · Beta-Binomial Posterior Revocation · Sarvam Voice Telephony Integration
+      </div>
+    </div>
+  </footer>
+
+  <script src="/static/common.js"></script>
+  <script>
+    let TAB = "queue";
+    let SEL = null;
+    let ALL_TICKETS = [];
+
+    const $ = id => document.getElementById(id);
+
+    // Update top telemetry ribbon
+    async function updateTelemetry() {
+      try {
+        const L = await api("/api/log");
+        const s = L.learning || {};
+        $("stat_lam").textContent = s.lam !== undefined ? Number(s.lam).toFixed(4) : "—";
+        $("stat_n_verdicts").textContent = s.n_feedback ?? 0;
+        const nRevoked = s.revoked ? Object.keys(s.revoked).length : 0;
+        $("stat_revoked").textContent = nRevoked;
+        $("stat_revoked").style.color = nRevoked > 0 ? "var(--color-warning)" : "#2e7d32";
+
+        // Count pending reviews
+        const pendingReviews = await api("/api/tickets?review=true");
+        const revCountEl = $("review_counter");
+        if (pendingReviews.length > 0) {
+          revCountEl.textContent = pendingReviews.length;
+          revCountEl.style.display = "inline-block";
+        } else {
+          revCountEl.style.display = "none";
+        }
+      } catch (e) {
+        console.warn("Telemetry update failure:", e);
+      }
+    }
+
+    async function loadList() {
+      const q = TAB === "review" ? "review=true" : `status=${encodeURIComponent($("st").value)}&route=${encodeURIComponent($("rt").value)}`;
+      $("list").innerHTML = `<div class="text-mono text-graphite" style="padding:20px;">LOADING TICKETS...</div>`;
+      try {
+        ALL_TICKETS = await api(`/api/tickets?${q}`);
+        renderTicketList();
+        updateTelemetry();
+      } catch (e) {
+        $("list").innerHTML = `<div class="alert-error" style="margin:16px;">Failed to load queue: ${esc(e.message)}</div>`;
+      }
+    }
+
+    function renderTicketList() {
+      const search = ($("search_box") ? $("search_box").value : "").toLowerCase().trim();
+      let ts = ALL_TICKETS;
+      if (search) {
+        ts = ts.filter(t => 
+          (t.id && t.id.toLowerCase().includes(search)) ||
+          (t.subject && t.subject.toLowerCase().includes(search)) ||
+          (t.raised_by?.name && t.raised_by.name.toLowerCase().includes(search)) ||
+          (t.raised_by?.phone && t.raised_by.phone.includes(search)) ||
+          (t.clarity?.scenario_title && t.clarity.scenario_title.toLowerCase().includes(search))
+        );
+      }
+
+      $("list_count_badge").textContent = `${ts.length} ticket${ts.length === 1 ? "" : "s"}`;
+
+      if (!ts.length) {
+        $("list").innerHTML = `
+          <div class="text-mono text-graphite" style="padding:32px 20px; text-align:center;">
+            ${TAB === "review" ? "No resolved/closed tickets currently waiting for staff review." : "No tickets matching active filters."}
+          </div>
+        `;
+        return;
+      }
+
+      $("list").innerHTML = `
+        <table class="brutal-table">
+          <thead>
+            <tr>
+              <th>Ticket ID</th>
+              <th>Scenario & Subject</th>
+              <th>Route</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${ts.map(t => {
+              const c = t.clarity || {};
+              const d = c.decision || {};
+              const isSel = t.id === SEL;
+              return `
+                <tr class="row-clickable ${isSel ? "row-selected" : ""}" data-id="${t.id}">
+                  <td class="text-mono" style="font-size:12px; font-weight:700;">
+                    ${t.id}
+                    <div class="text-graphite" style="font-size:10px; font-weight:400; margin-top:2px;">
+                      ${esc(t.channel)} · ${when(t.created_at)}
+                    </div>
+                  </td>
+                  <td>
+                    <div style="font-weight:600; font-size:12px; line-height:1.3;">
+                      ${esc(c.scenario_title || t.subject)}
+                    </div>
+                    <div class="text-graphite" style="font-size:11px; margin-top:2px;">
+                      ${esc(t.raised_by?.name)} (${esc(t.raised_by?.role)})
+                    </div>
+                  </td>
+                  <td>
+                    ${routeBadge(d.route)}
+                    ${t.autopilot ? `<div class="text-mono text-graphite" style="font-size:10px; margin-top:2px;">auto: ${esc(t.autopilot.outcome)}</div>` : ""}
+                  </td>
+                  <td>
+                    ${statusBadge(t.status)}
+                    ${t.feedback ? `<div class="text-mono" style="font-size:10px; color:#2e7d32; margin-top:2px;">✓ ${esc(t.feedback.verdict.replace(/_/g, " "))}</div>` : ""}
+                  </td>
+                </tr>
+              `;
+            }).join("")}
+          </tbody>
+        </table>
+      `;
+
+      for (const tr of $("list").querySelectorAll("tr.row-clickable")) {
+        tr.onclick = () => {
+          SEL = tr.dataset.id;
+          renderTicketList();
+          showTicketDetail(SEL);
+        };
+      }
+    }
+
+    const kv = o => `
+      <table class="kv-table">
+        ${Object.entries(o)
+          .filter(([, v]) => v !== null && v !== "" && !(Array.isArray(v) && !v.length))
+          .map(([k, v]) => `
+            <tr>
+              <th>${esc(k.replace(/_/g, " "))}</th>
+              <td>${esc(typeof v === "object" ? JSON.stringify(v) : v)}</td>
+            </tr>
+          `).join("")}
+      </table>
+    `;
+
+    async function showTicketDetail(id) {
+      $("detail").innerHTML = `<div class="text-mono text-graphite" style="padding:20px;">RETRIEVING DIAGNOSTIC TELEMETRY FOR ${esc(id)}...</div>`;
+      $("inspector_tag").textContent = id;
+      try {
+        const [t, calls] = await Promise.all([
+          api(`/api/tickets/${id}`),
+          api(`/api/calls/ticket/${id}`).catch(() => [])
+        ]);
+
+        const c = t.clarity || {};
+        const d = c.decision || {};
+        const a = t.autopilot;
+        const s = c.suggestion;
+
+        let answersHtml = "";
+        if (d.answers) {
+          answersHtml = Object.entries(d.answers).map(([k, x]) => `
+            <tr>
+              <th class="text-mono" style="font-size:11px; padding:6px 8px; border-bottom:1px solid var(--color-grid);">${k}</th>
+              <td style="padding:6px 8px; font-weight:600; border-bottom:1px solid var(--color-grid);">
+                ${esc(typeof x.answer === "number" ? x.answer.toFixed(2) : x.answer)}
+              </td>
+              <td class="text-mono text-graphite" style="font-size:11px; padding:6px 8px; border-bottom:1px solid var(--color-grid);">
+                ${esc(Object.entries(x.probabilities).map(([o, p]) => `${o}: ${p.toFixed(2)}`).join(" · "))}
+              </td>
+            </tr>
+          `).join("");
+        }
+
+        const pAi = d.answers?.route?.probabilities?.ai ?? 0;
+
+        let html = `
+          <!-- Header Banner -->
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:16px; flex-wrap:wrap; gap:10px;">
+            <div>
+              <div style="font-family:var(--font-display); font-size:22px; font-weight:700;">
+                ${t.id}
+              </div>
+              <div class="text-graphite text-mono" style="font-size:11px;">
+                ${esc(t.channel.toUpperCase())} INTAKE · CREATED: ${when(t.created_at)} · LAST UPDATED: ${when(t.updated_at)}
+              </div>
+            </div>
+            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+              ${statusBadge(t.status)}
+              ${routeBadge(d.route)}
+              <button type="button" class="btn btn-secondary btn-sm" id="btn_dispatch_call">
+                📞 CALL CALLER (SARVAM AI)
+              </button>
+            </div>
+          </div>
+
+          <div id="call_dispatch_status" style="display:none; margin-bottom:12px;"></div>
+
+          <!-- Subject & Caller Info Box -->
+          <div style="background:var(--color-paper); border:var(--border-strong); padding:12px 14px; margin-bottom:16px;">
+            <div style="font-weight:700; font-size:15px; margin-bottom:4px;">${esc(t.subject)}</div>
+            <div class="text-mono text-graphite" style="font-size:11px;">
+              <b>Party:</b> ${esc(t.raised_by.name)} (${esc(t.raised_by.role)}) · <b>Phone:</b> ${esc(t.raised_by.phone)}
+              ${t.raised_by.merchant_id ? ` · <b>Merchant ID:</b> ${esc(t.raised_by.merchant_id)}` : ""}
+            </div>
+            ${t.description ? `<div style="margin-top:8px; font-size:13px; line-height:1.4;">${esc(t.description)}</div>` : ""}
+            ${t.ask ? `<div class="text-mono" style="margin-top:6px; font-size:11px; color:var(--color-blueprint);"><b>Customer Desired Ask:</b> ${esc(t.ask)}</div>` : ""}
+          </div>
+
+          <!-- Associated Voice Calls from Sarvam Telephony -->
+          ${calls && calls.length ? `
+            <div style="background:var(--color-paper-light); border:2px solid var(--color-ink); padding:12px 14px; margin-bottom:16px;">
+              <div class="text-mono" style="font-weight:700; font-size:11px; color:var(--color-ink); margin-bottom:6px;">
+                📞 ASSOCIATED SARVAM VOICE CALLS (${calls.length})
+              </div>
+              ${calls.map(call => `
+                <div style="border-bottom:1px solid var(--color-grid); padding-bottom:8px; margin-bottom:8px;">
+                  <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span class="badge ${call.direction === 'OUTBOUND' ? 'badge-ai' : 'badge-neutral'}">${call.direction}</span>
+                    <span class="text-mono" style="font-size:11px;">${call.status} · ${call.duration_seconds || 0}s</span>
+                  </div>
+                  ${call.recording_url ? `
+                    <div style="margin-top:6px;">
+                      <audio controls src="${esc(call.recording_url)}" style="width:100%; height:32px;"></audio>
+                    </div>
+                  ` : ''}
+                  ${call.forwarded ? `<div class="badge badge-human" style="margin-top:4px;">👤 FORWARDED TO SPECIALIST</div>` : ''}
+                </div>
+              `).join('')}
+            </div>
+          ` : ''}
+
+          <!-- Transcript if present -->
+          ${t.transcript && t.transcript.length ? `
+            <div style="margin-bottom:16px;">
+              <div class="field-label">Conversation Transcript</div>
+              <div style="max-height:180px; overflow-y:auto; border:1px solid var(--color-ink); padding:8px; background:var(--color-paper);">
+                ${t.transcript.map(turn => `
+                  <div class="transcript-turn speaker-${turn.speaker}">
+                    <span class="speaker-tag">${turn.speaker}</span>
+                    <span>${esc(turn.text)}</span>
+                  </div>
+                `).join("")}
+              </div>
+            </div>
+          ` : ""}
+
+          <!-- JEV DECISION CARD -->
+          <div class="panel-gravity" style="margin-bottom:20px;">
+            <div class="panel-surface panel-sheet" style="padding:14px 16px;">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                <div class="text-mono" style="font-weight:700; font-size:12px; text-transform:uppercase;">
+                  ⚡ Jev Decision Engine Inference
+                </div>
+                ${routeBadge(d.route)}
+              </div>
+
+              <!-- Probability Bar -->
+              ${probMeter("ROUTE CLASSIFICATION SCORE", pAi, d.lam)}
+
+              <div style="background:var(--color-paper); border:1px solid var(--color-ink); padding:10px 12px; margin-bottom:12px;">
+                <div style="font-weight:700; font-size:13px; color:var(--color-ink); margin-bottom:4px;">
+                  Primary Routing Reason:
+                </div>
+                <div style="font-size:13px;">${esc(d.why || "Automated policy evaluation")}</div>
+                ${d.reasons && d.reasons.length > 1 ? `
+                  <ul style="margin-top:6px; margin-left:18px; font-size:12px; color:var(--color-graphite);">
+                    ${d.reasons.slice(1).map(r => `<li>${esc(r)}</li>`).join("")}
+                  </ul>
+                ` : ""}
+              </div>
+
+              <div class="text-mono text-graphite" style="font-size:10px; margin-bottom:10px;">
+                CALIBRATION: λ̂ = ${Number(d.lam || 0).toFixed(4)} · RISK BOUND α = ${d.alpha} · MODEL: ${esc(d.model || "Jev")} · LATENCY: ${d.latency_ms} ms
+              </div>
+
+              ${answersHtml ? `
+                <div class="table-wrap" style="box-shadow:none; border:1px solid var(--color-ink);">
+                  <table style="width:100%; border-collapse:collapse; font-size:11px;">
+                    <thead>
+                      <tr style="background:var(--color-ink); color:var(--color-paper);">
+                        <th style="padding:4px 8px; text-align:left;">Question</th>
+                        <th style="padding:4px 8px; text-align:left;">Output</th>
+                        <th style="padding:4px 8px; text-align:left;">Calibrated Probabilities</th>
+                      </tr>
+                    </thead>
+                    <tbody>${answersHtml}</tbody>
+                  </table>
+                </div>
+              ` : ""}
+            </div>
+          </div>
+
+          <!-- AUTOPILOT LOG (if ran) -->
+          ${a ? `
+            <div style="background:#EAF6DC; border:2px solid #295007; padding:14px; margin-bottom:18px;">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                <div class="text-mono" style="font-weight:700; font-size:12px; color:#295007;">
+                  ⚡ AUTOPILOT EXECUTION // ${esc(a.outcome)}
+                </div>
+                <span class="badge badge-dark">MCP SERVER: ${esc(a.server)}</span>
+              </div>
+              <p style="font-size:13px; margin-bottom:10px;">${esc(a.summary)}</p>
+              ${a.log && a.log.length ? `
+                <div class="table-wrap" style="box-shadow:none;">
+                  <table class="brutal-table" style="font-size:11px;">
+                    <thead>
+                      <tr>
+                        <th>Tool Invoked</th>
+                        <th>Arguments & Justification</th>
+                        <th>Result</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      ${a.log.map(x => `
+                        <tr>
+                          <td class="text-mono" style="font-weight:700;">${esc(x.tool)}</td>
+                          <td>
+                            <div><b>Why:</b> ${esc(x.why)}</div>
+                            <div class="text-mono text-graphite" style="font-size:10px;">${esc(JSON.stringify(x.args))}</div>
+                          </td>
+                          <td class="text-mono" style="font-size:10px;">${esc(JSON.stringify(x.result))}</td>
+                        </tr>
+                      `).join("")}
+                    </tbody>
+                  </table>
+                </div>
+              ` : ""}
+            </div>
+          ` : ""}
+
+          <!-- CASE MEMORY & SUGGESTION -->
+          ${s ? `
+            <div style="background:var(--color-paper); border:var(--border-strong); padding:14px; margin-bottom:18px;">
+              <div class="text-mono" style="font-weight:700; font-size:11px; color:var(--color-blueprint); text-transform:uppercase; margin-bottom:4px;">
+                📋 Suggested Action Plan <span class="text-graphite">(${esc(s.basis)})</span>
+              </div>
+              <ol style="margin-left:20px; font-size:13px; margin-bottom:8px;">
+                ${s.do.map(x => `<li>${esc(x)}</li>`).join("")}
+              </ol>
+              ${s.similar && s.similar.length ? `
+                <div class="text-mono text-graphite" style="font-size:11px;">
+                  Matched past verified resolutions: ${s.similar.map(x => `${x.ticket_id} (similarity: ${x.similarity})`).join(", ")}
+                </div>
+              ` : ""}
+            </div>
+          ` : ""}
+
+          <!-- CLARITY & STRUCTURED DETAILS -->
+          <div style="margin-bottom:18px;">
+            <div class="field-label">Extracted Structured Facts & Category</div>
+            ${kv({
+              category: `${c.category} (${c.category_source})`,
+              scenario: c.scenario,
+              action_plan: `${c.action?.code}: ${c.action?.summary}`,
+              money_moving: c.action?.money_moving,
+              missing_facts: c.details_missing,
+              recovered_from_text: c.details_recovered,
+              security_guard_hits: c.signals?.guard_hits,
+              secret_removed: c.signals?.secret_removed || null,
+              pii_redacted_count: c.signals?.pii_redacted || null
+            })}
+          </div>
+
+          <!-- POLICIES APPLIED -->
+          ${c.policies || c.policy_holds ? `
+            <div style="margin-bottom:18px;">
+              <div class="field-label">Cited Policy Clauses (ALPHA Tree RAG)</div>
+              ${[...((c.policy_holds || []).map(p => ({ ...p, isHold: true }))), ...(c.policies || [])].map(p => `
+                <div class="policy-card ${p.isHold ? "is-hold" : ""}">
+                  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:2px;">
+                    <span class="policy-id">${esc(p.id)}: ${esc(p.title)}</span>
+                    ${p.isHold ? '<span class="badge badge-human">MANDATORY HUMAN HOLD</span>' : '<span class="badge badge-neutral">CLAUSE</span>'}
+                  </div>
+                  <div class="text-graphite" style="font-size:12px;">${esc(p.text)}</div>
+                </div>
+              `).join("")}
+            </div>
+          ` : ""}
+
+          <!-- RESOLUTION DISPLAY (if existing) -->
+          ${t.resolution ? `
+            <div style="background:var(--color-paper-light); border:var(--border-strong); padding:12px 14px; margin-bottom:18px;">
+              <div class="field-label" style="color:#2e7d32;">Recorded Resolution</div>
+              <div style="font-size:13px;">${esc(t.resolution)}</div>
+            </div>
+          ` : ""}
+
+          <!-- UPDATE STATUS & RESOLUTION FORM -->
+          <div style="background:var(--color-paper-light); border:var(--border-strong); padding:16px; margin-bottom:20px;">
+            <div style="font-family:var(--font-display); font-size:14px; font-weight:700; margin-bottom:10px; text-transform:uppercase;">
+              Execute Support Action
+            </div>
+            <form id="upd_form">
+              <div class="form-group">
+                <label class="field-label">Resolution Statement <span class="hint">(Required to resolve or close)</span></label>
+                <textarea name="resolution" rows="2" placeholder="Detail the steps taken or verified...">${esc(t.resolution || "")}</textarea>
+              </div>
+              <div class="form-grid-2">
+                <div class="form-group">
+                  <label class="field-label">Set New Status</label>
+                  <select name="status">
+                    <option value="">(Keep Current: ${t.status})</option>
+                    <option value="in_progress">in_progress</option>
+                    <option value="resolved">resolved</option>
+                    <option value="closed">closed</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label class="field-label">Internal Audit Note</label>
+                  <input name="note" placeholder="Optional audit memo">
+                </div>
+              </div>
+              <div style="display:flex; align-items:center; gap:12px; margin-top:8px;">
+                <button type="submit" class="btn btn-primary btn-sm">UPDATE TICKET →</button>
+                <span class="alert-error" id="uerr" style="display:none; padding:4px 8px;"></span>
+              </div>
+            </form>
+          </div>
+
+          <!-- ROUTE VERDICT & FEEDBACK SECTION -->
+          ${["resolved", "closed"].includes(t.status) && !t.feedback ? `
+            <div style="background:var(--color-signal); border:var(--border-strong); padding:16px; margin-bottom:20px; box-shadow:var(--shadow-hard);">
+              <div style="font-family:var(--font-display); font-size:15px; font-weight:700; margin-bottom:6px; text-transform:uppercase;">
+                ⚖️ Staff Route Evaluation & Feedback Loop
+              </div>
+              <p style="font-size:12px; margin-bottom:12px;">
+                Your verdict triggers immediate conformal risk recalibration (λ̂) and updates scenario Bayesian posterior reliability.
+              </p>
+              <form id="feedback_form">
+                <div style="margin-bottom:10px;">
+                  <label class="check-label">
+                    <input type="radio" name="verdict" value="correct" required>
+                    <span><b>Correct Route:</b> ${d.route === "AI" ? "AI resolution was sufficient & safe" : "Human review was genuinely necessary"}</span>
+                  </label>
+                  ${d.route === "AI" ? `
+                    <label class="check-label">
+                      <input type="radio" name="verdict" value="needed_human">
+                      <span style="color:var(--color-warning);"><b>Incorrect Route:</b> This ticket required human intervention</span>
+                    </label>
+                  ` : `
+                    <label class="check-label">
+                      <input type="radio" name="verdict" value="ai_could_resolve">
+                      <span><b>Sub-optimal Route:</b> AI could have resolved this autonomously</span>
+                    </label>
+                  `}
+                </div>
+                <div style="margin-bottom:10px;">
+                  <label class="check-label">
+                    <input type="checkbox" name="worked" checked>
+                    <span>The resolution successfully fixed the customer's issue</span>
+                  </label>
+                </div>
+                <div class="form-group">
+                  <label class="field-label">Verdict Note <span class="hint">(optional)</span></label>
+                  <input name="note" placeholder="Explain routing assessment...">
+                </div>
+                <div style="display:flex; align-items:center; gap:12px;">
+                  <button type="submit" class="btn btn-dark btn-sm">TRANSMIT VERDICT & RECALIBRATE</button>
+                  <span class="alert-error" id="ferr" style="display:none; padding:4px 8px;"></span>
+                </div>
+              </form>
+            </div>
+          ` : ""}
+
+          <!-- FEEDBACK ALREADY RECORDED -->
+          ${t.feedback ? `
+            <div style="background:#EDF9DC; border:1px solid #2B570A; padding:12px 14px; margin-bottom:18px;">
+              <div class="text-mono" style="font-weight:700; font-size:11px; color:#2B570A; margin-bottom:2px;">
+                ✓ VERDICT RECORDED // ${esc(t.feedback.verdict.replace(/_/g, " ").toUpperCase())}
+              </div>
+              <div style="font-size:12px;">
+                Resolution ${t.feedback.resolution_worked ? "worked effectively" : "did not fix problem"}
+                ${t.feedback.note ? `— <i>"${esc(t.feedback.note)}"</i>` : ""}
+              </div>
+            </div>
+          ` : ""}
+
+          <!-- EVENT HISTORY AUDIT TRAIL -->
+          <div>
+            <div class="field-label">Immutable Event Ledger</div>
+            <div class="table-wrap" style="box-shadow:none;">
+              <table class="brutal-table" style="font-size:11px;">
+                <thead>
+                  <tr>
+                    <th>Timestamp</th>
+                    <th>Actor</th>
+                    <th>Status Transition</th>
+                    <th>Annotation</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${t.history.map(h => `
+                    <tr>
+                      <td class="text-mono text-graphite">${when(h.at)}</td>
+                      <td><b>${esc(h.by)}</b></td>
+                      <td>${statusBadge(h.status)}</td>
+                      <td>${esc(h.note || "—")}</td>
+                    </tr>
+                  `).join("")}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        `;
+
+        $("detail").innerHTML = html;
+
+        // Bind dispatch call button
+        const dispatchBtn = $("btn_dispatch_call");
+        if (dispatchBtn) {
+          dispatchBtn.onclick = async () => {
+            if (!confirm(`Trigger an automated Sarvam AI voice call to ${t.raised_by.phone} regarding ${t.id}?`)) return;
+            const statusEl = $("call_dispatch_status");
+            statusEl.style.display = "block";
+            statusEl.className = "text-mono text-graphite";
+            statusEl.textContent = "DISPATCHING CALL VIA SARVAM TELEPHONY...";
+            try {
+              const res = await api("/api/calls/outbound", "POST", {
+                ticket_id: t.id,
+                user_phone_number: t.raised_by.phone,
+                customer_name: t.raised_by.name,
+                issue_summary: t.subject
+              });
+              statusEl.className = "alert-success";
+              statusEl.textContent = `✓ Call Dispatched via Sarvam! Interaction ID: ${res.interaction_id}`;
+              showTicketDetail(id);
+            } catch (x) {
+              statusEl.className = "alert-error";
+              statusEl.textContent = `Call dispatch error: ${x.message}`;
+            }
+          };
+        }
+
+        // Bind update form
+        const updForm = $("upd_form");
+        if (updForm) {
+          updForm.onsubmit = async (e) => {
+            e.preventDefault();
+            const errSpan = $("uerr");
+            errSpan.style.display = "none";
+            const f = e.target;
+            try {
+              await api(`/api/tickets/${id}`, "PATCH", {
+                by: "support",
+                status: f.status.value || null,
+                resolution: f.resolution.value || null,
+                note: f.note.value || null
+              });
+              loadList();
+              showTicketDetail(id);
+            } catch (x) {
+              errSpan.style.display = "inline-block";
+              errSpan.textContent = x.message;
+            }
+          };
+        }
+
+        // Bind feedback form
+        const fbForm = $("feedback_form");
+        if (fbForm) {
+          fbForm.onsubmit = async (e) => {
+            e.preventDefault();
+            const errSpan = $("ferr");
+            errSpan.style.display = "none";
+            const f = e.target;
+            try {
+              await api(`/api/tickets/${id}/feedback`, "POST", {
+                verdict: f.verdict.value,
+                resolution_worked: f.worked.checked,
+                note: f.note.value || null
+              });
+              loadList();
+              showTicketDetail(id);
+              updateTelemetry();
+            } catch (x) {
+              errSpan.style.display = "inline-block";
+              errSpan.textContent = x.message;
+            }
+          };
+        }
+
+      } catch (e) {
+        $("detail").innerHTML = `<div class="alert-error" style="margin:20px;">Failed to load ticket details: ${esc(e.message)}</div>`;
+      }
+    }
+
+    async function loadCalls() {
+      const wrap = $("calls_table_wrap");
+      wrap.innerHTML = `<div class="text-mono text-graphite" style="padding:20px;">QUERYING CALL LOGS & RECORDINGS...</div>`;
+      try {
+        const calls = await api("/api/calls/logs");
+        if (!calls.length) {
+          wrap.innerHTML = `<div class="text-mono text-graphite" style="padding:20px;">No phone calls logged yet. Inbound caller webhooks or outbound calls will appear here.</div>`;
+          return;
+        }
+
+        wrap.innerHTML = `
+          <div class="table-wrap">
+            <table class="brutal-table" style="font-size:12px;">
+              <thead>
+                <tr>
+                  <th>Time / ID</th>
+                  <th>Direction</th>
+                  <th>Ticket</th>
+                  <th>Caller Phone</th>
+                  <th>Status & Duration</th>
+                  <th>Recording & Audio</th>
+                  <th>Transcript & Escalation</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${calls.map(c => `
+                  <tr>
+                    <td class="text-mono" style="font-size:11px;">
+                      <b>${when(c.updated_at)}</b>
+                      <div class="text-graphite" style="font-size:10px;">${esc(c.interaction_id)}</div>
+                    </td>
+                    <td>
+                      <span class="badge ${c.direction === 'OUTBOUND' ? 'badge-ai' : 'badge-neutral'}">
+                        ${esc(c.direction)}
+                      </span>
+                    </td>
+                    <td class="text-mono" style="font-weight:700;">
+                      <a href="#" onclick="event.preventDefault(); switchTab('queue'); SEL='${c.ticket_id}'; loadList(); showTicketDetail('${c.ticket_id}');">
+                        ${esc(c.ticket_id)}
+                      </a>
+                    </td>
+                    <td class="text-mono">${esc(c.user_phone)}</td>
+                    <td>
+                      <span class="badge badge-outline">${esc(c.status)}</span>
+                      <div class="text-mono text-graphite" style="font-size:10px; margin-top:2px;">
+                        ${c.duration_seconds || 0} seconds
+                      </div>
+                    </td>
+                    <td>
+                      ${c.recording_url ? `
+                        <audio controls src="${esc(c.recording_url)}" style="width:160px; height:28px;"></audio>
+                      ` : '<span class="text-graphite text-mono" style="font-size:10px;">No audio</span>'}
+                      ${c.forwarded_recording_url ? `
+                        <div style="margin-top:4px;">
+                          <span class="text-mono" style="font-size:9px; font-weight:700;">TRANSFER AUDIO:</span><br>
+                          <audio controls src="${esc(c.forwarded_recording_url)}" style="width:160px; height:28px;"></audio>
+                        </div>
+                      ` : ''}
+                    </td>
+                    <td>
+                      ${c.forwarded ? `<span class="badge badge-human" style="font-size:10px; margin-bottom:4px; display:inline-block;">TRANSFERRED TO SPECIALIST</span><br>` : ''}
+                      ${c.transcript && c.transcript.length ? `
+                        <details>
+                          <summary class="text-mono" style="cursor:pointer; font-size:11px; color:var(--color-blueprint);">
+                            View Turns (${c.transcript.length})
+                          </summary>
+                          <div style="max-height:120px; overflow-y:auto; background:var(--color-paper); padding:6px; margin-top:4px; border:1px solid var(--color-ink); font-size:11px;">
+                            ${(Array.isArray(c.transcript) ? c.transcript : []).map(t => `
+                              <div><b>${esc(t.role || t.speaker || 'msg')}:</b> ${esc(t.content || t.text || JSON.stringify(t))}</div>
+                            `).join('')}
+                          </div>
+                        </details>
+                      ` : '<span class="text-graphite text-mono" style="font-size:10px;">—</span>'}
+                    </td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        `;
+      } catch (x) {
+        wrap.innerHTML = `<div class="alert-error" style="margin:16px;">Failed to fetch call logs: ${esc(x.message)}</div>`;
+      }
+    }
+
+    $("btn_sync_calls").onclick = async () => {
+      const btn = $("btn_sync_calls");
+      btn.disabled = true;
+      btn.textContent = "SYNCING WITH SARVAM...";
+      try {
+        const res = await api("/api/calls/sync", "POST");
+        alert(`Synced ${res.synced_count} interactions from Sarvam cloud analytics!`);
+        loadCalls();
+      } catch (x) {
+        alert("Sync failed: " + x.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "SYNC FROM SARVAM CLOUD ↺";
+      }
+    };
+
+    async function loadLog() {
+      try {
+        const L = await api("/api/log");
+        const s = L.learning || {};
+
+        let revokedHtml = "";
+        const revokedKeys = Object.keys(s.revoked || {});
+        if (revokedKeys.length) {
+          revokedHtml = `
+            <div style="background:var(--color-warning-light); border:2px solid var(--color-warning); padding:12px 14px; margin-bottom:16px;">
+              <div style="font-weight:700; color:var(--color-warning); font-size:13px; margin-bottom:6px;">
+                ⚠ AI ROUTING REVOKED FOR ${revokedKeys.length} SCENARIOS
+              </div>
+              ${Object.entries(s.revoked).map(([k, v]) => `
+                <div class="text-mono" style="font-size:12px; margin-bottom:4px;">
+                  <b>${esc(k)}:</b> ${esc(v)}
+                </div>
+              `).join("")}
+            </div>
+          `;
+        } else {
+          revokedHtml = `
+            <div style="background:#EDF9DC; border:1px solid #2B570A; padding:10px 14px; margin-bottom:16px;">
+              <span class="text-mono" style="font-size:12px; color:#2B570A; font-weight:700;">✓ NO SCENARIOS CURRENTLY REVOKED (All automated scenarios within safe error bounds).</span>
+            </div>
+          `;
+        }
+
+        let scenariosHtml = "";
+        const scEntries = Object.entries(s.scenarios || {});
+        if (scEntries.length) {
+          scenariosHtml = `
+            <div style="margin-top:16px;">
+              <div class="field-label">Bayesian Beta Posterior Reliability Per Scenario</div>
+              <div class="table-wrap" style="box-shadow:none;">
+                <table class="brutal-table" style="font-size:12px;">
+                  <thead>
+                    <tr>
+                      <th>Scenario Code</th>
+                      <th>Good Verdicts</th>
+                      <th>Bad Verdicts</th>
+                      <th>P(Error &gt; 10%)</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${scEntries.map(([k, x]) => {
+                      const isRev = s.revoked && s.revoked[k];
+                      return `
+                        <tr>
+                          <td class="text-mono" style="font-weight:700;">${esc(k)}</td>
+                          <td style="color:#2e7d32; font-weight:600;">${x.good}</td>
+                          <td style="color:var(--color-warning); font-weight:600;">${x.bad}</td>
+                          <td class="text-mono">${(Number(x.p_err_above_target || 0) * 100).toFixed(1)}%</td>
+                          <td>
+                            ${isRev ? '<span class="badge badge-human">REVOKED</span>' : '<span class="badge badge-ai">ACTIVE</span>'}
+                          </td>
+                        </tr>
+                      `;
+                    }).join("")}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          `;
+        }
+
+        $("learning_metrics_body").innerHTML = `
+          <div style="display:flex; justify-content:space-between; flex-wrap:wrap; gap:16px; margin-bottom:16px;">
+            <div style="max-width:600px;">
+              <div style="font-family:var(--font-display); font-size:18px; font-weight:700;">
+                CONFORMAL RISK CONTROL
+              </div>
+              <p style="font-size:13px; color:var(--color-graphite); margin-top:4px;">
+                Threshold λ̂ is adjusted with each support review verdict so that E[Loss] ≤ α (2%). 
+                AI is only granted tickets when calibrated confidence meets or exceeds λ̂.
+              </p>
+            </div>
+            <div style="display:flex; gap:12px;">
+              <div class="telemetry-cell">
+                <span class="telemetry-label">Active λ̂</span>
+                <span class="telemetry-value text-mono">${Number(s.lam || 0).toFixed(4)}</span>
+              </div>
+              <div class="telemetry-cell">
+                <span class="telemetry-label">Trained λ̂</span>
+                <span class="telemetry-value text-mono">${Number(s.lam_trained || 0).toFixed(4)}</span>
+              </div>
+              <div class="telemetry-cell">
+                <span class="telemetry-label">Sample Count</span>
+                <span class="telemetry-value text-mono">${s.n_feedback || 0}</span>
+              </div>
+            </div>
+          </div>
+          ${revokedHtml}
+          ${scenariosHtml}
+        `;
+
+        // Feedback table
+        if (L.feedback && L.feedback.length) {
+          $("feedback_table_wrap").innerHTML = `
+            <table class="brutal-table" style="font-size:12px;">
+              <thead>
+                <tr>
+                  <th>Timestamp</th>
+                  <th>Ticket</th>
+                  <th>Scenario</th>
+                  <th>Route</th>
+                  <th>Verdict</th>
+                  <th>P(AI)</th>
+                  <th>Resolution Worked</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${L.feedback.map(f => `
+                  <tr>
+                    <td class="text-mono text-graphite">${when(f.at)}</td>
+                    <td class="text-mono" style="font-weight:700;">${f.ticket_id}</td>
+                    <td>${esc(f.scenario)}</td>
+                    <td>${routeBadge(f.route)}</td>
+                    <td><b>${esc(f.verdict.replace(/_/g, " "))}</b></td>
+                    <td class="text-mono">${Number(f.p_ai || 0).toFixed(3)}</td>
+                    <td>${f.resolution_worked ? "✓ Yes" : "✗ No"}</td>
+                  </tr>
+                `).join("")}
+              </tbody>
+            </table>
+          `;
+        } else {
+          $("feedback_table_wrap").innerHTML = `<div class="text-mono text-graphite" style="padding:24px 20px;">No support feedback reviews logged yet.</div>`;
+        }
+
+        // Decisions table
+        if (L.decisions && L.decisions.length) {
+          $("decisions_table_wrap").innerHTML = `
+            <table class="brutal-table" style="font-size:12px;">
+              <thead>
+                <tr>
+                  <th>Timestamp</th>
+                  <th>Ticket</th>
+                  <th>Scenario</th>
+                  <th>Route</th>
+                  <th>P(AI)</th>
+                  <th>Why</th>
+                  <th>Autopilot</th>
+                  <th>Verdict</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${L.decisions.map(x => `
+                  <tr>
+                    <td class="text-mono text-graphite">${when(x.at)}</td>
+                    <td class="text-mono" style="font-weight:700;">${x.ticket_id}</td>
+                    <td>${esc(x.scenario)}</td>
+                    <td>${routeBadge(x.route)}</td>
+                    <td class="text-mono">${Number(x.p_ai || 0).toFixed(3)}</td>
+                    <td style="max-width:280px; font-size:11px;">${esc(x.why)}</td>
+                    <td class="text-mono" style="font-size:11px;">${x.autopilot || "—"}</td>
+                    <td class="text-mono">${(x.verdict || "—").replace(/_/g, " ")}</td>
+                  </tr>
+                `).join("")}
+              </tbody>
+            </table>
+          `;
+        } else {
+          $("decisions_table_wrap").innerHTML = `<div class="text-mono text-graphite" style="padding:24px 20px;">No decisions logged yet.</div>`;
+        }
+
+      } catch (e) {
+        console.error("Log fetch failure:", e);
+      }
+    }
+
+    function switchTab(name) {
+      TAB = name;
+      for (const btn of document.querySelectorAll("header .nav-link[data-tab]")) {
+        btn.classList.toggle("active", btn.dataset.tab === name);
+      }
+
+      const isLog = name === "log";
+      const isReview = name === "review";
+      const isCalls = name === "calls";
+
+      $("section_queue").style.display = (isLog || isCalls) ? "none" : "block";
+      $("section_log").style.display = isLog ? "block" : "none";
+      $("section_calls").style.display = isCalls ? "block" : "none";
+      $("filter_row").style.display = isReview ? "none" : "block";
+
+      if (isReview) {
+        $("tab_title_heading").textContent = "PENDING ROUTE REVIEWS (CLOSED / RESOLVED)";
+        $("list_heading_label").textContent = "Tickets Awaiting Staff Verdict";
+      } else if (isLog) {
+        $("tab_title_heading").textContent = "DECISION AUDIT & MODEL RECALIBRATION";
+      } else if (isCalls) {
+        $("tab_title_heading").textContent = "SARVAM TELEPHONY & VOICE RECORDINGS";
+      } else {
+        $("tab_title_heading").textContent = "ACTIVE TRIAGE QUEUE";
+        $("list_heading_label").textContent = "All Tickets";
+      }
+
+      if (isLog) {
+        loadLog();
+      } else if (isCalls) {
+        loadCalls();
+      } else {
+        loadList();
+      }
+    }
+
+    for (const a of document.querySelectorAll("header .nav-link[data-tab]")) {
+      a.onclick = (e) => {
+        e.preventDefault();
+        switchTab(a.dataset.tab);
+      };
+    }
+
+    $("st").onchange = $("rt").onchange = loadList;
+    if ($("search_box")) $("search_box").oninput = renderTicketList;
+    $("btn_refresh").onclick = loadList;
+
+    // Start
+    switchTab("queue");
+    updateTelemetry();
+    setInterval(updateTelemetry, 15000);
+  </script>
 </body>
 </html>

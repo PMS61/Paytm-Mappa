@@ -1,120 +1,861 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Paytm Help</title>
-<link rel="stylesheet" href="/static/base.css">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>KARMA // Paytm Support & Resolution</title>
+  <link rel="stylesheet" href="/static/base.css">
 </head>
 <body>
-<header><b>Paytm Help</b><nav><a href="/">Raise a ticket</a><a href="/support">Support desk</a></nav></header>
-<main>
-<section>
-  <h2>Raise a ticket</h2>
-  <form id="f">
-    <div class="row">
-      <label>I am a<select name="role"><option value="merchant">Merchant</option><option value="customer">Customer</option></select></label>
-      <label>Name<input name="name" required value="Ghruank General Store"></label>
-      <label>Phone<input name="phone" required pattern="\+?\d{10,13}" value="9876500001"></label>
-      <label>Merchant ID<input name="merchant_id" placeholder="optional"></label>
-    </div>
-    <div class="row">
-      <label>Raised via<select name="channel"><option value="manual">Form</option><option value="chatbot">Chatbot</option><option value="call">Call</option></select></label>
-      <label>Category<select name="category" id="cat"><option value="">Not sure</option></select></label>
-    </div>
-    <label>Subject<input name="subject" required minlength="3" placeholder="Settlement of ₹12,400 not received"></label>
-    <label>Describe the problem<textarea name="description" rows="3"></textarea></label>
-    <label>What should we do?<input name="ask" placeholder="optional"></label>
-    <fieldset id="details"><legend>Details</legend><div class="row" id="dfields"></div></fieldset>
-    <label id="tr" hidden>Transcript (one turn per line, <code>customer:</code> or <code>agent:</code>)
-      <textarea name="transcript" rows="5" placeholder="customer: mera settlement nahi aaya&#10;agent: kitne ka tha?"></textarea></label>
-    <label class="check"><input type="checkbox" name="human_requested"> I want to talk to a person</label>
-    <button>Raise ticket</button> <span id="err" class="err"></span>
-  </form>
-</section>
-<section id="out" hidden></section>
-<section>
-  <h2>My tickets</h2>
-  <div class="row"><label>Phone<input id="myphone" value="9876500001"></label><button type="button" id="load">Show</button></div>
-  <div id="mine"></div>
-</section>
-</main>
-<script src="/static/common.js"></script>
-<script>
-const DETAIL = {amount: ["Amount (₹)", "number"], txn_id: ["Transaction ID", "text"], refund_amount: ["Refund amount (₹)", "number"],
-  refund_kind: ["Refund", ["", "new request", "not received"]], bank_name: ["Bank", "text"], account_last4: ["Account last 4 digits", "text"],
-  account_changed: ["Changed bank account recently?", ["", "true", "false"]], account_changed_hours_ago: ["Changed how many hours ago", "number"],
-  device_issue: ["What is wrong with the device", "text"], offline_days: ["Days not working", "number"],
-  kyc_issue: ["What the app says about KYC", "text"], started: ["When did it start", "text"]};
-const SHOW = {settlement: ["amount", "bank_name", "account_last4", "account_changed", "account_changed_hours_ago", "started"],
-  refund: ["amount", "txn_id", "refund_kind", "refund_amount", "started"], device: ["device_issue", "offline_days"],
-  kyc: ["kyc_issue"], payment: ["amount", "txn_id", "started"], other: [], "": ["amount", "txn_id"]};
-let TAX;
-const f = document.getElementById("f");
 
-function field(k, req) {
-  const [lab, type] = DETAIL[k];
-  const input = Array.isArray(type) ? `<select name="d_${k}">${type.map(o => `<option>${o}</option>`).join("")}</select>`
-    : `<input name="d_${k}" type="${type}" step="any">`;
-  return `<label>${lab}${req ? " *" : ""}${input}</label>`;
-}
-function renderDetails() {
-  const c = f.category.value, req = (TAX.required[c] || []);
-  document.getElementById("dfields").innerHTML = SHOW[c].map(k => field(k, req.includes(k))).join("");
-}
-function readDetails(form) {
-  const d = {};
-  for (const el of form.querySelectorAll("[name^=d_]")) {
-    const k = el.name.slice(2), v = el.value.trim();
-    if (!v) continue;
-    d[k] = v === "true" ? true : v === "false" ? false : DETAIL[k][1] === "number" ? Number(v) : v;
-  }
-  return d;
-}
-function parseTranscript(s) {
-  return s.split("\n").map(l => l.trim()).filter(Boolean).map(l => {
-    const m = l.match(/^(customer|agent)\s*:\s*(.*)$/i);
-    return m ? {speaker: m[1].toLowerCase(), text: m[2]} : {speaker: "customer", text: l};
-  });
-}
-function showTicket(t) {
-  const c = t.clarity, out = document.getElementById("out");
-  out.hidden = false;
-  out.innerHTML = `<h2>${t.id}</h2>
-    <p>Status: <b>${esc(t.status.replace("_", " "))}</b></p>
-    <p>${esc(c.scenario_title)}. Next step: ${esc(c.action.summary)}.</p>
-    ${c.details_missing.length ? `<form id="more"><p>We still need:</p><div class="row">${c.details_missing.map(k => field(k, true)).join("")}</div>
-      <button>Add details</button></form>` : ""}`;
-  const more = document.getElementById("more");
-  if (more) more.onsubmit = async e => {
-    e.preventDefault();
-    showTicket(await api(`/api/tickets/${t.id}`, "PATCH", {by: "customer", details: readDetails(more)}));
-  };
-}
+  <!-- Top Header Navigation -->
+  <header class="site-header">
+    <div class="header-inner">
+      <div class="brand-block">
+        <span class="brand-mark">KARMA</span>
+        <div class="brand-title">
+          PAYTM SUPPORT CORE
+          <span class="brand-sub">Decision Engine & Triage</span>
+        </div>
+      </div>
+      <nav class="nav-cluster">
+        <a href="/" class="nav-link active">Customer Portal</a>
+        <a href="/support" class="nav-link">Support Desk</a>
+      </nav>
+      <div class="header-status">
+        <span class="status-dot"></span>
+        <span>SYSTEM // NOMINAL</span>
+      </div>
+    </div>
+  </header>
 
-f.channel.onchange = () => document.getElementById("tr").hidden = f.channel.value === "manual";
-f.category.onchange = renderDetails;
-f.onsubmit = async e => {
-  e.preventDefault();
-  document.getElementById("err").textContent = "";
-  const body = {channel: f.channel.value, category: f.category.value || null, subject: f.subject.value,
-    description: f.description.value, ask: f.ask.value || null, details: readDetails(f), human_requested: f.human_requested.checked,
-    raised_by: {role: f.role.value, name: f.name.value, phone: f.phone.value, merchant_id: f.merchant_id.value || null},
-    transcript: f.channel.value === "manual" ? [] : parseTranscript(f.transcript.value)};
-  try { showTicket(await api("/api/tickets", "POST", body)); }
-  catch (x) { document.getElementById("err").textContent = x.message; }
-};
-document.getElementById("load").onclick = async () => {
-  const ts = await api(`/api/tickets?phone=${encodeURIComponent(document.getElementById("myphone").value)}`);
-  document.getElementById("mine").innerHTML = ts.length ? `<table><tr><th>Ticket</th><th>Subject</th><th>Status</th><th>Raised</th></tr>
-    ${ts.map(t => `<tr><td>${t.id}</td><td>${esc(t.subject)}</td><td>${t.status.replace("_", " ")}</td><td>${when(t.created_at)}</td></tr>`).join("")}</table>`
-    : "<p>No tickets.</p>";
-};
-api("/api/taxonomy").then(t => {
-  TAX = t;
-  for (const [k, v] of Object.entries(t.categories)) f.category.insertAdjacentHTML("beforeend", `<option value="${k}">${esc(v)}</option>`);
-  renderDetails();
-});
-</script>
+  <!-- Main Shell -->
+  <main class="app-shell">
+
+    <!-- Hero Disruption / Architectural Banner -->
+    <div class="hero-disruption">
+      <div class="hero-plane">
+        <div>
+          <div class="hero-meta">
+            <span class="tag-indicator">LIVE GATEWAY</span>
+            <span>INTAKE · SANITIZE · ROUTE · RESOLVE</span>
+          </div>
+          <h1 class="hero-heading">DISPUTE & SUPPORT INTAKE</h1>
+          <p class="hero-sub">
+            Submissions are instantly sanitized (PII redacted, secrets stripped), mapped to Paytm policy clauses, 
+            and evaluated by the Jev decision engine with conformal risk bounds.
+          </p>
+        </div>
+        <div class="hero-telemetry">
+          <div class="telemetry-cell">
+            <span class="telemetry-label">Risk Bound</span>
+            <span class="telemetry-value text-mono">α ≤ 2.0%</span>
+          </div>
+          <div class="telemetry-cell">
+            <span class="telemetry-label">Ceiling</span>
+            <span class="telemetry-value text-mono">₹50,000</span>
+          </div>
+          <div class="telemetry-cell">
+            <span class="telemetry-label">Sarvam Telephony</span>
+            <span class="telemetry-value text-mono" style="color: #2e7d32;">ONLINE</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2-Column Asymmetric Workspace -->
+    <div class="asym-grid">
+
+      <!-- LEFT: Raise Ticket Engine -->
+      <section class="panel-gravity">
+        <div class="panel-surface panel-sheet">
+          <div class="panel-header">
+            <div class="panel-header-title">
+              <span class="panel-num">01</span>
+              <span>Intake Method</span>
+            </div>
+            <div style="display: flex; gap: 4px;">
+              <button type="button" class="btn btn-sm btn-primary" id="tab_btn_form" style="padding: 4px 10px;">STANDARD FORM</button>
+              <button type="button" class="btn btn-sm btn-secondary" id="tab_btn_ai" style="padding: 4px 10px;">⚡ SARVAM AI CHAT</button>
+            </div>
+          </div>
+
+          <div class="panel-body">
+            
+            <!-- MODE A: Standard Structured Form -->
+            <div id="view_form">
+              <form id="f">
+                <!-- Identity Row -->
+                <div class="form-grid-2">
+                  <div class="form-group">
+                    <label class="field-label">Account Role <span class="req">*</span></label>
+                    <select name="role" id="f_role">
+                      <option value="merchant">Merchant (Partner)</option>
+                      <option value="customer">Customer (User)</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label class="field-label">Full Name <span class="req">*</span></label>
+                    <input name="name" required value="Ghruank General Store" placeholder="Store or Individual name">
+                  </div>
+                </div>
+
+                <div class="form-grid-2">
+                  <div class="form-group">
+                    <label class="field-label">Phone Number <span class="req">*</span></label>
+                    <input name="phone" required pattern="\+?\d{10,13}" value="9876500001" placeholder="10-digit mobile">
+                  </div>
+                  <div class="form-group" id="group_merchant_id">
+                    <label class="field-label">Merchant ID <span class="hint">(optional)</span></label>
+                    <input name="merchant_id" class="input-technical" placeholder="e.g. M2002" value="M2001">
+                  </div>
+                </div>
+
+                <!-- Channel & Category Row -->
+                <div class="form-grid-2">
+                  <div class="form-group">
+                    <label class="field-label">Intake Channel <span class="req">*</span></label>
+                    <select name="channel" id="f_channel">
+                      <option value="manual">Manual Web Form</option>
+                      <option value="chatbot">Chatbot Assistant</option>
+                      <option value="call">Voice Call (Sarvam AI)</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label class="field-label">Issue Category <span class="req">*</span></label>
+                    <select name="category" id="f_cat">
+                      <option value="">Not Sure — Let Karma Classify</option>
+                    </select>
+                  </div>
+                </div>
+
+                <!-- Subject & Description -->
+                <div class="form-group">
+                  <label class="field-label">Subject <span class="req">*</span></label>
+                  <input name="subject" required minlength="3" placeholder="e.g. Settlement of ₹12,400 not received" value="Settlement of ₹12,400 not received">
+                </div>
+
+                <div class="form-group">
+                  <label class="field-label">Problem Description</label>
+                  <textarea name="description" rows="3" placeholder="Describe what happened in detail..."></textarea>
+                </div>
+
+                <div class="form-group">
+                  <label class="field-label">Desired Resolution <span class="hint">(What should we do?)</span></label>
+                  <input name="ask" placeholder="e.g. Release pending settlement immediately">
+                </div>
+
+                <!-- Dynamic Details Fieldset -->
+                <fieldset class="details-fieldset">
+                  <legend class="details-legend">Structured Facts</legend>
+                  <div class="form-grid-2" id="dfields">
+                    <!-- Populated by JavaScript based on Category -->
+                  </div>
+                </fieldset>
+
+                <!-- Transcript Block (shown for chatbot & call) -->
+                <div class="form-group" id="tr_group" hidden>
+                  <label class="field-label">
+                    Call / Chat Transcript 
+                    <span class="hint">(one turn per line: <code>customer: ...</code> or <code>agent: ...</code>)</span>
+                  </label>
+                  <textarea name="transcript" rows="4" class="input-technical" placeholder="customer: mera settlement nahi aaya&#10;agent: kitne ka tha?&#10;customer: 12400 ka tha"></textarea>
+                </div>
+
+                <!-- Human Agent Preference Checkbox -->
+                <div class="form-group" style="margin: 14px 0 18px 0;">
+                  <label class="check-label">
+                    <input type="checkbox" name="human_requested">
+                    <span>I prefer to talk directly with a human specialist</span>
+                  </label>
+                </div>
+
+                <!-- Privacy Notice -->
+                <div class="helper-text" style="margin-bottom: 16px; padding: 8px 10px; background: var(--color-paper-dim); border-left: 3px solid var(--color-ink);">
+                  🛡️ <b>Automatic Data Protection:</b> Passwords, PINs, and OTPs are stripped. Aadhaar, PAN, UPI, and debit card numbers are masked via Verhoeff & Luhn filters before reaching decision storage.
+                </div>
+
+                <!-- Submit Button & Error Output -->
+                <div style="display: flex; align-items: center; gap: 14px; flex-wrap: wrap;">
+                  <button type="submit" class="btn btn-primary" id="btn_submit">
+                    <span>TRANSMIT TICKET</span>
+                    <span>→</span>
+                  </button>
+                  <div id="form_err" class="alert-error" style="display: none; margin: 0; padding: 6px 12px;"></div>
+                </div>
+              </form>
+            </div>
+
+            <!-- MODE B: Interactive Sarvam AI Clarity Chat Session -->
+            <div id="view_ai" style="display: none;">
+              <div style="background: var(--color-paper); border: 1px solid var(--color-ink); padding: 12px 14px; margin-bottom: 16px;">
+                <div class="text-mono" style="font-weight: 700; font-size: 11px; color: var(--color-blueprint); margin-bottom: 4px;">
+                  🤖 SARVAM 105B CLARITY AGENT
+                </div>
+                <p style="font-size: 12px;">
+                  Explain your issue in natural language (Hindi, Hinglish, or English). 
+                  Sarvam's clarity engine will verify your situation against policy clauses, ask only what is missing, and autonomously file the ticket.
+                </p>
+              </div>
+
+              <div id="clarity_session_setup">
+                <div class="form-grid-2">
+                  <div class="form-group">
+                    <label class="field-label">My Role</label>
+                    <select id="ai_role">
+                      <option value="merchant">Merchant</option>
+                      <option value="customer">Customer</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label class="field-label">My Name</label>
+                    <input id="ai_name" value="Amal Medicos">
+                  </div>
+                </div>
+                <div class="form-grid-2">
+                  <div class="form-group">
+                    <label class="field-label">Phone Number</label>
+                    <input id="ai_phone" value="9876500002">
+                  </div>
+                  <div class="form-group">
+                    <label class="field-label">Channel Mode</label>
+                    <select id="ai_channel">
+                      <option value="call">Voice Call Turn</option>
+                      <option value="chatbot">Chatbot Turn</option>
+                    </select>
+                  </div>
+                </div>
+                <button type="button" class="btn btn-primary" id="btn_start_clarity" style="width: 100%; margin-top: 8px;">
+                  INITIALIZE SARVAM CLARITY SESSION ⚡
+                </button>
+              </div>
+
+              <div id="clarity_chat_interface" style="display: none;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                  <span class="text-mono" style="font-size: 11px; font-weight: 700;">SESSION ID: <span id="active_clarity_id">—</span></span>
+                  <button type="button" class="btn btn-secondary btn-sm" id="btn_reset_clarity">New Session</button>
+                </div>
+
+                <div id="clarity_messages" style="max-height: 280px; overflow-y: auto; border: 2px solid var(--color-ink); background: var(--color-paper-light); padding: 12px; margin-bottom: 12px;">
+                  <div class="transcript-turn speaker-agent">
+                    <span class="speaker-tag">Sarvam AI Assistant</span>
+                    <span>Namaste! How can I help you with your Paytm payments, settlements, or devices today?</span>
+                  </div>
+                </div>
+
+                <div id="clarity_input_box">
+                  <div class="form-group">
+                    <textarea id="ai_info_input" rows="2" placeholder="e.g. Mera settlement 8400 rupaye ka hdfc bank me abhi tak nahi aaya"></textarea>
+                  </div>
+                  <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span class="text-mono text-graphite" style="font-size: 11px;" id="clarity_calls_counter">Turns: 0 / 5</span>
+                    <button type="button" class="btn btn-primary btn-sm" id="btn_send_clarity">TRANSMIT TO SARVAM →</button>
+                  </div>
+                </div>
+
+                <div id="clarity_status_banner" style="margin-top: 12px; display: none;"></div>
+              </div>
+
+            </div>
+
+          </div>
+        </div>
+      </section>
+
+      <!-- RIGHT: Status, Clarity & Lookup Column -->
+      <div style="display: flex; flex-direction: column; gap: 24px;">
+
+        <!-- Active / Raised Ticket Card (Clarity & Decision Output) -->
+        <section class="panel-sheet" id="active_ticket_panel" style="display: none;">
+          <div class="panel-header">
+            <div class="panel-header-title">
+              <span class="panel-num">02</span>
+              <span>Ticket Inspection & Clarity Result</span>
+            </div>
+            <span id="active_ticket_status_badge"></span>
+          </div>
+
+          <div class="panel-body" id="active_ticket_body">
+            <!-- Rendered by showTicket() -->
+          </div>
+        </section>
+
+        <!-- Placeholder when no ticket is selected -->
+        <section class="panel-sheet" id="placeholder_panel">
+          <div class="panel-header">
+            <div class="panel-header-title">
+              <span class="panel-num">02</span>
+              <span>Resolution Pipeline</span>
+            </div>
+            <span class="badge badge-neutral">STANDBY</span>
+          </div>
+          <div class="panel-body" style="text-align: center; padding: 36px 20px;">
+            <div style="font-family: var(--font-display); font-size: 16px; font-weight: 700; margin-bottom: 8px;">
+              AWAITING TICKET SUBMISSION
+            </div>
+            <p class="text-graphite" style="max-width: 400px; margin: 0 auto; font-size: 12px;">
+              Submit a dispute on the left or search your existing tickets below to view real-time Jev engine routing, policy compliance, and automated resolution logs.
+            </p>
+          </div>
+        </section>
+
+        <!-- Ticket Lookup & My Tickets -->
+        <section class="panel-sheet">
+          <div class="panel-header">
+            <div class="panel-header-title">
+              <span class="panel-num">03</span>
+              <span>Find Existing Tickets</span>
+            </div>
+            <span class="badge badge-neutral">DATABASE</span>
+          </div>
+
+          <div class="panel-body">
+            <div class="form-grid-2" style="align-items: flex-end;">
+              <div class="form-group" style="margin: 0;">
+                <label class="field-label">Search by Phone Number</label>
+                <input id="myphone" value="9876500001" placeholder="Enter phone number">
+              </div>
+              <div>
+                <button type="button" class="btn btn-secondary" id="btn_load_tickets" style="width: 100%;">
+                  LOOKUP TICKETS
+                </button>
+              </div>
+            </div>
+
+            <div id="tickets_result_wrap" style="margin-top: 18px;">
+              <div id="mine" class="text-graphite text-mono" style="font-size: 12px;">
+                Enter a registered phone number to view filed tickets and their status.
+              </div>
+            </div>
+          </div>
+        </section>
+
+      </div>
+    </div>
+  </main>
+
+  <!-- Footer -->
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <div>
+        <b>KARMA</b> // Paytm Precision Support & Decision Engine
+      </div>
+      <div>
+        Deterministic Clarity · Calibrated Conformal Risk Control · Sarvam AI Samvaad Integration
+      </div>
+    </div>
+  </footer>
+
+  <script src="/static/common.js"></script>
+  <script>
+    const DETAIL = {
+      amount: ["Amount (₹)", "number"],
+      txn_id: ["Transaction ID", "text"],
+      refund_amount: ["Refund Amount (₹)", "number"],
+      refund_kind: ["Refund Kind", ["", "new request", "not received"]],
+      bank_name: ["Bank Name", "text"],
+      account_last4: ["Account Last 4 Digits", "text"],
+      account_changed: ["Changed Bank Account Recently?", ["", "true", "false"]],
+      account_changed_hours_ago: ["Changed How Many Hours Ago", "number"],
+      device_issue: ["Device Issue Description", "text"],
+      offline_days: ["Days Device Inactive", "number"],
+      kyc_issue: ["KYC Verification Error", "text"],
+      started: ["When Did Issue Start?", "text"]
+    };
+
+    const SHOW = {
+      settlement: ["amount", "bank_name", "account_last4", "account_changed", "account_changed_hours_ago", "started"],
+      refund: ["amount", "txn_id", "refund_kind", "refund_amount", "started"],
+      device: ["device_issue", "offline_days"],
+      kyc: ["kyc_issue"],
+      payment: ["amount", "txn_id", "started"],
+      other: [],
+      "": ["amount", "txn_id"]
+    };
+
+    let TAX = { categories: {}, required: {} };
+    const f = document.getElementById("f");
+    const errEl = document.getElementById("form_err");
+
+    // Intake Mode Switching
+    document.getElementById("tab_btn_form").onclick = () => {
+      document.getElementById("view_form").style.display = "block";
+      document.getElementById("view_ai").style.display = "none";
+      document.getElementById("tab_btn_form").className = "btn btn-sm btn-primary";
+      document.getElementById("tab_btn_ai").className = "btn btn-sm btn-secondary";
+    };
+    document.getElementById("tab_btn_ai").onclick = () => {
+      document.getElementById("view_form").style.display = "none";
+      document.getElementById("view_ai").style.display = "block";
+      document.getElementById("tab_btn_form").className = "btn btn-sm btn-secondary";
+      document.getElementById("tab_btn_ai").className = "btn btn-sm btn-primary";
+    };
+
+    function renderField(k, isReq) {
+      const item = DETAIL[k];
+      if (!item) return "";
+      const [lab, type] = item;
+      let inputHtml = "";
+      if (Array.isArray(type)) {
+        inputHtml = `<select name="d_${k}">
+          ${type.map(opt => `<option value="${opt}">${opt === "" ? "-- Select --" : opt}</option>`).join("")}
+        </select>`;
+      } else {
+        inputHtml = `<input name="d_${k}" type="${type}" step="any" placeholder="Enter ${lab.toLowerCase()}">`;
+      }
+      return `
+        <div class="form-group">
+          <label class="field-label">${lab}${isReq ? ' <span class="req">*</span>' : ""}</label>
+          ${inputHtml}
+        </div>
+      `;
+    }
+
+    function renderDetails() {
+      const cat = f.category.value;
+      const reqList = (TAX.required && TAX.required[cat]) || [];
+      const keys = SHOW[cat] || SHOW[""];
+      const html = keys.map(k => renderField(k, reqList.includes(k))).join("");
+      document.getElementById("dfields").innerHTML = html || `<div class="helper-text" style="grid-column: 1/-1;">No additional mandatory fields required for this category.</div>`;
+    }
+
+    function readDetails(form) {
+      const d = {};
+      for (const el of form.querySelectorAll("[name^=d_]")) {
+        const k = el.name.slice(2);
+        const v = el.value.trim();
+        if (!v) continue;
+        if (v === "true") d[k] = true;
+        else if (v === "false") d[k] = false;
+        else if (DETAIL[k] && DETAIL[k][1] === "number") d[k] = Number(v);
+        else d[k] = v;
+      }
+      return d;
+    }
+
+    function parseTranscript(s) {
+      return s.split("\n")
+        .map(l => l.trim())
+        .filter(Boolean)
+        .map(l => {
+          const m = l.match(/^(customer|agent)\s*:\s*(.*)$/i);
+          return m ? { speaker: m[1].toLowerCase(), text: m[2].trim() } : { speaker: "customer", text: l };
+        });
+    }
+
+    function showTicket(t) {
+      const c = t.clarity || {};
+      const d = c.decision || {};
+      const panel = document.getElementById("active_ticket_panel");
+      const placeholder = document.getElementById("placeholder_panel");
+      const badgeContainer = document.getElementById("active_ticket_status_badge");
+      const out = document.getElementById("active_ticket_body");
+
+      placeholder.style.display = "none";
+      panel.style.display = "block";
+      badgeContainer.innerHTML = statusBadge(t.status);
+
+      let html = `
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:14px; flex-wrap:wrap; gap:8px;">
+          <div>
+            <div style="font-family:var(--font-technical); font-size:11px; color:var(--color-graphite);">TICKET IDENTIFIER</div>
+            <div style="font-family:var(--font-display); font-size:24px; font-weight:700; letter-spacing:-0.03em;">
+              ${t.id}
+            </div>
+          </div>
+          <div style="display:flex; gap:8px; align-items:center;">
+            ${routeBadge(d.route)}
+            <button type="button" class="btn btn-secondary btn-sm" onclick="copyToClipboard('${t.id}', this)">COPY ID</button>
+          </div>
+        </div>
+
+        <div style="background:var(--color-paper); border:var(--border-strong); padding:12px 14px; margin-bottom:16px;">
+          <div style="font-weight:700; font-size:14px; margin-bottom:4px;">${esc(t.subject)}</div>
+          <div class="text-graphite text-mono" style="font-size:11px;">
+            Raised by ${esc(t.raised_by.name)} (${esc(t.raised_by.role)}) · Phone: ${esc(t.raised_by.phone)} · Channel: ${esc(t.channel)} · ${when(t.created_at)}
+          </div>
+          ${t.description ? `<div style="margin-top:8px; font-size:13px;">${esc(t.description)}</div>` : ""}
+        </div>
+
+        <!-- Pipeline Progress -->
+        <div class="clarity-pipeline">
+          <div class="pipeline-step step-done">1. INGESTION</div>
+          <span class="pipeline-arrow">→</span>
+          <div class="pipeline-step step-done">2. CLARITY ${c.category ? `(${esc(c.category)})` : ""}</div>
+          <span class="pipeline-arrow">→</span>
+          <div class="pipeline-step ${d.route ? "step-active" : ""}">3. JEV (${d.route || "PENDING"})</div>
+          <span class="pipeline-arrow">→</span>
+          <div class="pipeline-step ${["resolved", "closed"].includes(t.status) ? "step-done" : ""}">4. ${t.status.toUpperCase()}</div>
+        </div>
+
+        <!-- Scenario & Action -->
+        <div style="border-left:4px solid var(--color-ink); padding:8px 12px; background:var(--color-paper); margin-bottom:16px;">
+          <div class="text-mono" style="font-size:10px; color:var(--color-graphite); text-transform:uppercase;">Identified Scenario</div>
+          <div style="font-weight:700; font-size:13px; margin:2px 0;">${esc(c.scenario_title || "General Inquiry")}</div>
+          <div style="font-size:12px; color:var(--color-graphite);"><b>Next Step:</b> ${esc(c.action?.summary || "Pending triage")}</div>
+        </div>
+      `;
+
+      // Missing details interactive form if needs_info
+      if (c.details_missing && c.details_missing.length > 0) {
+        html += `
+          <div style="background:var(--color-warning-light); border:2px solid var(--color-warning); padding:14px; margin-bottom:16px;">
+            <div style="font-family:var(--font-display); font-weight:700; font-size:13px; color:var(--color-warning); text-transform:uppercase; margin-bottom:6px;">
+              ⚠ Additional Information Required to Proceed
+            </div>
+            <p style="font-size:12px; margin-bottom:12px;">
+              Our automated resolution policy requires these missing details before this ticket can be resolved:
+            </p>
+            <form id="more_details_form">
+              <div class="form-grid-2">
+                ${c.details_missing.map(k => renderField(k, true)).join("")}
+              </div>
+              <button type="submit" class="btn btn-primary btn-sm" style="margin-top:10px;">
+                SUBMIT MISSING DETAILS →
+              </button>
+              <span id="more_err" class="alert-error" style="display:none; padding:4px 8px; margin-left:8px;"></span>
+            </form>
+          </div>
+        `;
+      }
+
+      // Autopilot summary if available
+      if (t.autopilot) {
+        html += `
+          <div style="background:#EBF8CF; border:1px solid #335905; padding:12px 14px; margin-bottom:16px;">
+            <div class="text-mono" style="font-weight:700; font-size:11px; color:#335905; margin-bottom:4px;">
+              ⚡ AUTOPILOT EXECUTION // ${esc(t.autopilot.outcome)}
+            </div>
+            <p style="font-size:12px;">${esc(t.autopilot.summary)}</p>
+          </div>
+        `;
+      }
+
+      // Final Resolution if available
+      if (t.resolution) {
+        html += `
+          <div style="background:var(--color-paper-light); border:var(--border-strong); padding:12px 14px; margin-bottom:16px;">
+            <div class="text-mono" style="font-weight:700; font-size:11px; margin-bottom:4px;">
+              RESOLUTION STATEMENT
+            </div>
+            <p style="font-size:13px;">${esc(t.resolution)}</p>
+          </div>
+        `;
+      }
+
+      // Timeline History
+      if (t.history && t.history.length > 0) {
+        html += `
+          <div style="margin-top:16px;">
+            <div class="text-mono" style="font-size:11px; font-weight:700; color:var(--color-graphite); margin-bottom:8px; text-transform:uppercase;">
+              Status Progression History
+            </div>
+            <div class="table-wrap">
+              <table class="brutal-table">
+                <thead>
+                  <tr>
+                    <th>Timestamp</th>
+                    <th>Actor</th>
+                    <th>Status</th>
+                    <th>Note</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${t.history.map(h => `
+                    <tr>
+                      <td class="text-mono" style="font-size:11px;">${when(h.at)}</td>
+                      <td><b>${esc(h.by)}</b></td>
+                      <td>${statusBadge(h.status)}</td>
+                      <td style="font-size:12px;">${esc(h.note || "—")}</td>
+                    </tr>
+                  `).join("")}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        `;
+      }
+
+      out.innerHTML = html;
+
+      // Bind missing details submission
+      const moreForm = document.getElementById("more_details_form");
+      if (moreForm) {
+        moreForm.onsubmit = async (e) => {
+          e.preventDefault();
+          const errSpan = document.getElementById("more_err");
+          errSpan.style.display = "none";
+          try {
+            const added = readDetails(moreForm);
+            const updated = await api(`/api/tickets/${t.id}`, "PATCH", {
+              by: "customer",
+              details: added
+            });
+            showTicket(updated);
+            document.getElementById("btn_load_tickets").click();
+          } catch (x) {
+            errSpan.style.display = "inline-block";
+            errSpan.textContent = x.message;
+          }
+        };
+      }
+
+      panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+
+    // Channel changes: toggle transcript textarea
+    f.channel.onchange = () => {
+      document.getElementById("tr_group").hidden = f.channel.value === "manual";
+    };
+
+    // Role changes: toggle merchant id requirement
+    document.getElementById("f_role").onchange = (e) => {
+      const isMerchant = e.target.value === "merchant";
+      document.getElementById("group_merchant_id").style.opacity = isMerchant ? "1" : "0.5";
+    };
+
+    // Category changes: re-render details form
+    f.category.onchange = renderDetails;
+
+    // Submit ticket
+    f.onsubmit = async (e) => {
+      e.preventDefault();
+      errEl.style.display = "none";
+      const btn = document.getElementById("btn_submit");
+      btn.disabled = true;
+      btn.innerHTML = "PROCESSING INTAKE...";
+
+      const body = {
+        channel: f.channel.value,
+        category: f.category.value || null,
+        subject: f.subject.value,
+        description: f.description.value,
+        ask: f.ask.value || null,
+        details: readDetails(f),
+        human_requested: f.human_requested.checked,
+        raised_by: {
+          role: f.role.value,
+          name: f.name.value,
+          phone: f.phone.value,
+          merchant_id: f.role.value === "merchant" ? (f.merchant_id.value || null) : null
+        },
+        transcript: f.channel.value === "manual" ? [] : parseTranscript(f.transcript.value)
+      };
+
+      try {
+        const ticket = await api("/api/tickets", "POST", body);
+        showTicket(ticket);
+        document.getElementById("myphone").value = f.phone.value;
+        document.getElementById("btn_load_tickets").click();
+      } catch (x) {
+        errEl.style.display = "flex";
+        errEl.textContent = "Submission Failed: " + x.message;
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = "TRANSMIT TICKET →";
+      }
+    };
+
+    // ==========================================
+    // SARVAM AI CLARITY CONVERSATION HANDLERS
+    // ==========================================
+    let ACTIVE_CLARITY_ID = null;
+    let CLARITY_TURNS = 0;
+
+    document.getElementById("btn_start_clarity").onclick = async () => {
+      const btn = document.getElementById("btn_start_clarity");
+      btn.disabled = true;
+      btn.textContent = "INITIALIZING SESSION...";
+      try {
+        const role = document.getElementById("ai_role").value;
+        const name = document.getElementById("ai_name").value.trim() || "Customer";
+        const phone = document.getElementById("ai_phone").value.trim() || "9876500002";
+        const channel = document.getElementById("ai_channel").value;
+
+        const res = await api("/api/clarity/sessions", "POST", {
+          channel: channel,
+          raised_by: { role, name, phone },
+          language: "hi"
+        });
+
+        ACTIVE_CLARITY_ID = res.id;
+        CLARITY_TURNS = 0;
+
+        document.getElementById("active_clarity_id").textContent = ACTIVE_CLARITY_ID;
+        document.getElementById("clarity_session_setup").style.display = "none";
+        document.getElementById("clarity_chat_interface").style.display = "block";
+        document.getElementById("clarity_calls_counter").textContent = "Turns: 0 / 5";
+        document.getElementById("clarity_messages").innerHTML = `
+          <div class="transcript-turn speaker-agent">
+            <span class="speaker-tag">Sarvam AI Assistant (${channel.toUpperCase()})</span>
+            <span>Namaste ${esc(name)}! I'm your Paytm Support AI. Please describe what issue you are facing today.</span>
+          </div>
+        `;
+      } catch (x) {
+        alert("Failed to initialize Sarvam Clarity session: " + x.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "INITIALIZE SARVAM CLARITY SESSION ⚡";
+      }
+    };
+
+    document.getElementById("btn_reset_clarity").onclick = () => {
+      ACTIVE_CLARITY_ID = null;
+      document.getElementById("clarity_session_setup").style.display = "block";
+      document.getElementById("clarity_chat_interface").style.display = "none";
+      document.getElementById("clarity_status_banner").style.display = "none";
+    };
+
+    document.getElementById("btn_send_clarity").onclick = async () => {
+      const input = document.getElementById("ai_info_input");
+      const text = input.value.trim();
+      if (!text || !ACTIVE_CLARITY_ID) return;
+
+      const btn = document.getElementById("btn_send_clarity");
+      btn.disabled = true;
+      btn.textContent = "SARVAM REASONING...";
+
+      const msgBox = document.getElementById("clarity_messages");
+      msgBox.innerHTML += `
+        <div class="transcript-turn speaker-customer">
+          <span class="speaker-tag">You</span>
+          <span>${esc(text)}</span>
+        </div>
+      `;
+      msgBox.scrollTop = msgBox.scrollHeight;
+      input.value = "";
+
+      try {
+        const reply = await api("/api/clarity", "POST", {
+          id: ACTIVE_CLARITY_ID,
+          information: text
+        });
+
+        CLARITY_TURNS++;
+        document.getElementById("clarity_calls_counter").textContent = `Turns: ${reply.calls || CLARITY_TURNS} / 5`;
+
+        const banner = document.getElementById("clarity_status_banner");
+
+        if (reply.status === "needs_clarification") {
+          const questions = reply.clarifications || [];
+          msgBox.innerHTML += `
+            <div class="transcript-turn speaker-agent">
+              <span class="speaker-tag">Sarvam AI Assistant</span>
+              <div>${questions.map(q => `<div>• ${esc(q)}</div>`).join("") || "Could you provide a few more details?"}</div>
+            </div>
+          `;
+        } else if (reply.status === "escalate") {
+          msgBox.innerHTML += `
+            <div class="transcript-turn speaker-agent" style="border-left-color: var(--color-warning);">
+              <span class="speaker-tag" style="color: var(--color-warning);">Sarvam AI Escalation</span>
+              <div><b>Transferred to Human Specialist:</b> ${esc(reply.reason)}</div>
+            </div>
+          `;
+          banner.className = "alert-error";
+          banner.style.display = "block";
+          banner.textContent = `Escalated to human queue: ${reply.reason}`;
+          document.getElementById("clarity_input_box").style.display = "none";
+        } else if (reply.status === "done") {
+          msgBox.innerHTML += `
+            <div class="transcript-turn speaker-agent" style="border-left-color: #2e7d32;">
+              <span class="speaker-tag" style="color: #2e7d32;">Sarvam AI Conclusion</span>
+              <div><b>Issue fully verified!</b> Ticket raised: <b>${reply.ticket_id}</b> (${reply.route || 'AI'} Route).</div>
+              <div style="font-size:11px; margin-top:4px;">${esc(reply.conclusion || '')}</div>
+            </div>
+          `;
+          banner.className = "alert-success";
+          banner.style.display = "block";
+          banner.textContent = `✓ Ticket ${reply.ticket_id} created successfully and queued for resolution!`;
+          document.getElementById("clarity_input_box").style.display = "none";
+
+          if (reply.ticket_id) {
+            loadAndInspect(reply.ticket_id);
+          }
+        }
+      } catch (x) {
+        msgBox.innerHTML += `
+          <div class="alert-error" style="margin: 6px 0;">
+            Sarvam API Error: ${esc(x.message)}
+          </div>
+        `;
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "TRANSMIT TO SARVAM →";
+        msgBox.scrollTop = msgBox.scrollHeight;
+      }
+    };
+
+    // Load tickets by phone
+    document.getElementById("btn_load_tickets").onclick = async () => {
+      const phone = document.getElementById("myphone").value.trim();
+      const wrap = document.getElementById("mine");
+      if (!phone) {
+        wrap.innerHTML = `<span class="alert-error">Please enter a phone number.</span>`;
+        return;
+      }
+      wrap.innerHTML = `<div class="text-mono" style="padding:10px;">QUERYING DATABASE FOR ${esc(phone)}...</div>`;
+      try {
+        const ts = await api(`/api/tickets?phone=${encodeURIComponent(phone)}`);
+        if (!ts.length) {
+          wrap.innerHTML = `<div class="text-mono text-graphite" style="padding:10px;">No tickets found registered under phone number ${esc(phone)}.</div>`;
+          return;
+        }
+        wrap.innerHTML = `
+          <div class="table-wrap">
+            <table class="brutal-table">
+              <thead>
+                <tr>
+                  <th>Ticket</th>
+                  <th>Subject</th>
+                  <th>Scenario</th>
+                  <th>Route</th>
+                  <th>Status</th>
+                  <th>Raised</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${ts.map(t => `
+                  <tr class="row-clickable" onclick="loadAndInspect('${t.id}')">
+                    <td class="text-mono" style="font-weight:700;">${t.id}</td>
+                    <td>
+                      <b>${esc(t.subject)}</b>
+                      <div class="text-graphite" style="font-size:11px;">via ${esc(t.channel)}</div>
+                    </td>
+                    <td style="font-size:12px;">${esc(t.clarity?.scenario_title || "General")}</td>
+                    <td>${routeBadge(t.clarity?.decision?.route)}</td>
+                    <td>${statusBadge(t.status)}</td>
+                    <td class="text-mono" style="font-size:11px;">${when(t.created_at)}</td>
+                  </tr>
+                `).join("")}
+              </tbody>
+            </table>
+          </div>
+        `;
+      } catch (x) {
+        wrap.innerHTML = `<div class="alert-error">Error retrieving tickets: ${esc(x.message)}</div>`;
+      }
+    };
+
+    window.loadAndInspect = async (id) => {
+      try {
+        const ticket = await api(`/api/tickets/${id}`);
+        showTicket(ticket);
+      } catch (x) {
+        alert("Failed to load ticket: " + x.message);
+      }
+    };
+
+    // Initialize taxonomy
+    api("/api/taxonomy").then(t => {
+      TAX = t;
+      for (const [k, v] of Object.entries(t.categories)) {
+        f.category.insertAdjacentHTML("beforeend", `<option value="${k}">${esc(k.toUpperCase())} — ${esc(v)}</option>`);
+      }
+      renderDetails();
+    }).catch(err => {
+      console.warn("Taxonomy load failure:", err);
+      renderDetails();
+    });
+  </script>
 </body>
 </html>
