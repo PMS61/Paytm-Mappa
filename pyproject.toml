@@ -12,6 +12,8 @@ dependencies = [
     "scipy>=1.11",
     "model2vec>=0.4",
     "bm25s>=0.2",
+    "python-dotenv>=1.0.1",
+    "httpx>=0.27.2"
 ]
 
 [build-system]
@@ -20,3 +22,5 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
 packages = ["mappa"]
+
+
