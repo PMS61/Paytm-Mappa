@@ -311,3 +311,22 @@ def test_details_carry_across_turns():
     second = dict(ASKING, ticket={"category": "refund", "subject": "refund", "details": {"txn_id": "T88213"}})
     clarify.step(s.id, "txn T88213", llm=FakeLLM(second))
     assert sessions.get(s.id).draft["details"]["amount"] == 450
+
+
+def test_devanagari_and_empty_queries_do_not_crash_policy_search():
+    tree = policies.tree()
+    # Devanagari Hindi text produces empty ASCII tokens
+    res = tree.search("मेरा सेटलमेंट नहीं आया", None, 3)
+    assert len(res) > 0
+    # Empty string and whitespace queries
+    res_empty = tree.search("", None, 3)
+    assert len(res_empty) > 0
+    res_ws = tree.search("   ", None, 3)
+    assert len(res_ws) > 0
+
+
+def test_clarity_step_handles_devanagari_input():
+    s = _session()
+    out = clarify.step(s.id, "नमस्ते मेरा सेटलमेंट नहीं आया", llm=FakeLLM(ASKING))
+    assert out["status"] in ("needs_clarification", "done", "escalate")
+

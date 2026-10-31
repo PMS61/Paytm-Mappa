@@ -75,10 +75,13 @@ class PolicyTree:
     def search(self, query: str, category: str | None, k: int = 3) -> list[dict]:
         idx = np.array([i for i, u in enumerate(self.units) if "all" in u["applies"] or category in u["applies"]])
         q = self._emb([query])[0]
-        unit = _z(self.vecs[idx] @ q) + 0.5 * _z(self.bm25.get_scores(_tok([query])[0])[idx])
+        toks = _tok([query])[0]
+        bm_unit = self.bm25.get_scores(toks)[idx] if toks else np.zeros(len(idx), dtype=float)
+        unit = _z(self.vecs[idx] @ q) + 0.5 * _z(bm_unit)
         pages = sorted(set(self.page_of[idx]))
         best = np.array([unit[self.page_of[idx] == p].max() for p in pages])
-        ps = _z(best) + 0.5 * _z(self.page_bm25.get_scores(_tok([query])[0])[pages])
+        bm_page = self.page_bm25.get_scores(toks)[pages] if toks else np.zeros(len(pages), dtype=float)
+        ps = _z(best) + 0.5 * _z(bm_page)
         pos = {p: j for j, p in enumerate(pages)}
         nb = np.array([np.mean([ps[pos[x]] for x in (p - 1, p + 1) if x in pos and self.pages[x][0] == self.pages[p][0]]
                                or [ps[j]]) for j, p in enumerate(pages)])
