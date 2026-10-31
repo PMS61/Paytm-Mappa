@@ -45,11 +45,12 @@ Rules:
   account number or extra confirmation unless it is listed as required). Never ask again for a detail the customer
   already gave, in any language.
 - As soon as every required detail of the category is known, set clarification_needed false and conclude.
-- The customer may speak Hindi (Devanagari), Hinglish or English; understand all of them. Fill details in English with
+- The customer may speak Hindi, Marathi (both in Devanagari), Hinglish or English; understand all of them. Fill details in English with
   these exact formats: amount, refund_amount, offline_days and account_changed_hours_ago are numbers (convert number
   words such as "तीन" / "teen" to 3); refund_kind is exactly "new request" (they want to refund someone) or
-  "not received" (a refund was made but has not arrived); account_changed is true or false. Write clarifications and
-  the conclusion in English.
+  "not received" (a refund was made but has not arrived); account_changed is true or false. Write clarifications in the
+  same language and script as the customer's latest message (Hindi, Marathi, Hinglish or English); write the
+  conclusion in English.
 - An amount the customer mentions is details.amount. For a refund, the refund amount is that same amount unless the
   customer says otherwise; never ask for it separately.
 - When you conclude, set clarification_needed false, give a conclusion, and cite the policy ids you relied on
@@ -250,7 +251,7 @@ def _step(session_id: str, information: str, llm) -> dict:
     if reasons:
         return _escalate(s, "; ".join(reasons))
 
-    _required_gate(s, reply, scenario)
+    _required_gate(s, reply, scenario, information)
 
     # MCP capability: can the Paytm tools solve this scenario at all, and do their calls have what they need?
     mcp = _draft_check(reply["ticket"], scenario)
@@ -263,7 +264,7 @@ def _step(session_id: str, information: str, llm) -> dict:
     concluding = not reply["clarification_needed"] and reply["conclusion"]
     if concluding and mcp is not None and mcp["details_missing"]:
         reply["clarification_needed"], concluding = True, False  # the LLM concluded, but the MCP calls cannot run yet
-        qs = capability.questions(mcp["details_missing"]) + reply["clarifications"]
+        qs = [_ask(k, _lang(information, s.draft.get("lang"))) for k in mcp["details_missing"]] + reply["clarifications"]
         reply["clarifications"] = list(dict.fromkeys(qs))
 
     if concluding:
@@ -292,21 +293,28 @@ ACC_NO = re.compile(r"(account|khata|bank)\b.{0,30}\b(change|changed|badla|badal
 ACC_YES = re.compile(r"\b(naya|new|dusra|another)\b.{0,15}\b(account|khata)\b.{0,25}\b(add|added|kiya|joda|lagaya)\b"
                      r"|(account|khata)\b.{0,20}\b(change|badla|badal)\b\s*(kiya|kar diya|ho gaya|hai)\b", re.I)
 
-# Devanagari / Hinglish forms the shared regexes in clarity.py do not cover
+# Devanagari (Hindi and Marathi) / Hinglish forms the shared regexes in clarity.py do not cover
 NUM_WORDS = {"ek": 1, "एक": 1, "do": 2, "दो": 2, "teen": 3, "tin": 3, "तीन": 3, "char": 4, "chaar": 4, "चार": 4,
              "paanch": 5, "panch": 5, "पांच": 5, "पाँच": 5, "chhe": 6, "che": 6, "छह": 6, "छः": 6, "saat": 7, "सात": 7,
-             "aath": 8, "आठ": 8, "nau": 9, "नौ": 9, "das": 10, "दस": 10, "one": 1, "two": 2, "three": 3, "four": 4,
+             "aath": 8, "आठ": 8, "nau": 9, "नौ": 9, "das": 10, "दस": 10,
+             "दोन": 2, "पाच": 5, "सहा": 6, "नऊ": 9, "दहा": 10, "one": 1, "two": 2, "three": 3, "four": 4,
              "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10}
 DAYS_WORD = re.compile(r"(\d{1,3}|" + "|".join(sorted(map(re.escape, NUM_WORDS), key=len, reverse=True)) +
-                       r")\s*(din|dino|days?|दिन|दिनों)", re.I)
-WEEK = re.compile(r"(ek |a |one |एक )?(hafte|hafta|week|हफ्ते|हफ़्ते|सप्ताह)", re.I)
-REFUND_NEW_HI = re.compile(r"(रिफंड|रिफ़ंड|refund).{0,20}(करना|कर दो|करो|करें|चाहिए|देना|दे दो|वापस)", re.I)
+                       r")\s*(din|dino|days?|दिन|दिनों|दिवस|दिवसां|दिवसापासून|दिवसांपासून)", re.I)
+WEEK = re.compile(r"(ek |a |one |एक )?(hafte|hafta|week|हफ्ते|हफ़्ते|सप्ताह|आठवडा|आठवड्यापासून|आठवड्याभरापासून)", re.I)
+REFUND_NEW_HI = re.compile(r"(रिफंड|रिफ़ंड|refund|परतावा).{0,20}(करना|कर दो|करो|करें|चाहिए|देना|दे दो|वापस"
+                           r"|करायचा|करायचे|करायची|द्यायचा|द्यायचे|करा|हवा|हवे|परत)", re.I)
 REFUND_NOT_RECEIVED_HI = re.compile(r"(रिफंड|रिफ़ंड|refund).{0,30}(नहीं|नही).{0,10}(मिला|आया|पहुंचा|पहुँचा)"
-                                    r"|(नहीं|नही).{0,10}(मिला|आया|पहुंचा|पहुँचा).{0,30}(रिफंड|रिफ़ंड|refund)", re.I)
+                                    r"|(नहीं|नही).{0,10}(मिला|आया|पहुंचा|पहुँचा).{0,30}(रिफंड|रिफ़ंड|refund)"
+                                    r"|(रिफंड|रिफ़ंड|refund|परतावा).{0,30}(मिळाला|मिळाले|मिळाली|आला|आले|पोहोचला).{0,6}नाही", re.I)
 ACC_NO_HI = re.compile(r"(अकाउंट|खाता|बैंक).{0,30}(नहीं|नही).{0,10}(बदला|बदल|चेंज|जोड़ा|जोड़ा)"
-                       r"|(नहीं|नही).{0,25}(बदला|बदल|चेंज)|(वही|same).{0,5}(अकाउंट|खाता)", re.I)
+                       r"|(नहीं|नही).{0,25}(बदला|बदल|चेंज)|(वही|same).{0,5}(अकाउंट|खाता)"
+                       r"|(खाते|खाता|अकाउंट|बँक).{0,30}(बदलले|बदलला|बदलली|बदल|चेंज|जोडले|जोडला).{0,12}नाही"
+                       r"|नाही.{0,25}(बदलले|बदलला|बदलली|चेंज)|(तेच|तोच|same).{0,5}(खाते|अकाउंट)", re.I)
 ACC_YES_HI = re.compile(r"(नया|नए|नई|दूसरा).{0,10}(अकाउंट|खाता).{0,25}(जोड़ा|जोड़ा|ऐड|लगाया|डाला)"
-                        r"|(अकाउंट|खाता).{0,15}(बदला|बदल दिया|चेंज किया)", re.I)
+                        r"|(अकाउंट|खाता).{0,15}(बदला|बदल दिया|चेंज किया)"
+                        r"|(नवीन|नवे|दुसरे).{0,10}(खाते|अकाउंट).{0,25}(जोडले|जोडला|ऍड|लावले)"
+                        r"|(खाते|अकाउंट).{0,15}(बदलले|बदलला|चेंज केले)", re.I)
 
 
 def _recover_hindi(d: Details, text: str, category: str) -> None:
@@ -335,7 +343,57 @@ ASK = {  # one plain question per required detail (taxonomy.REQUIRED)
 }
 
 
-def _required_gate(s: ClaritySession, reply: dict, scenario: str) -> None:
+ASK_HI = {
+    "amount": "यह कितने रुपये का मामला है?",
+    "bank_name": "पैसा किस बैंक खाते में आना था (बैंक का नाम)?",
+    "account_changed": "क्या आपने हाल ही में अपना बैंक खाता जोड़ा या बदला है?",
+    "refund_kind": "क्या आप नया रिफंड करना चाहते हैं, या किया गया रिफंड ग्राहक तक नहीं पहुंचा?",
+    "device_issue": "डिवाइस में ठीक-ठीक क्या समस्या है (जैसे आवाज़ नहीं, चालू नहीं हो रहा, नेटवर्क नहीं)?",
+    "offline_days": "यह समस्या कितने दिनों से है?",
+    "kyc_issue": "KYC में क्या समस्या है (जैसे दस्तावेज़ रिजेक्ट हुआ, वेरिफिकेशन पेंडिंग)?",
+    "txn_id": "पेमेंट का ट्रांजैक्शन आईडी (या UTR / RRN) क्या है?",
+}
+ASK_MR = {
+    "amount": "हे किती रुपयांचे प्रकरण आहे?",
+    "bank_name": "पैसे कोणत्या बँक खात्यात यायला हवे होते (बँकेचे नाव)?",
+    "account_changed": "तुम्ही अलीकडे तुमचे बँक खाते जोडले किंवा बदलले आहे का?",
+    "refund_kind": "तुम्हाला नवीन रिफंड करायचा आहे, की केलेला रिफंड ग्राहकाला मिळाला नाही?",
+    "device_issue": "डिव्हाइसमध्ये नेमकी काय समस्या आहे (उदा. आवाज नाही, चालू होत नाही, नेटवर्क नाही)?",
+    "offline_days": "ही समस्या किती दिवसांपासून आहे?",
+    "kyc_issue": "KYC मध्ये काय समस्या आहे (उदा. कागदपत्र नाकारले, पडताळणी प्रलंबित)?",
+    "txn_id": "पेमेंटचा व्यवहार आयडी (किंवा UTR / RRN) काय आहे?",
+}
+DEVANAGARI = re.compile(r"[\u0900-\u097F]")
+MARATHI = re.compile(r"(आहे|नाही|माझे|माझा|माझी|मी |तुम्ही|झाले|आले|होते|होता|यायला|करायचा|करायचे|हवे|पासून|मध्ये|खाते|बँक|"
+                     r"रुपयांचे|रुपयांचा|दिवस|व्यवहार)")
+TXN_ANY = re.compile(r"\b(?=[A-Za-z]*\d)(?=\d*[A-Za-z])[A-Za-z0-9]{5,24}\b")  # an ID-looking token: letters and digits
+
+
+def _lang(text: str, previous: str | None = None) -> str:
+    """Language for the questions we send back: mr, hi or en (Latin incl. Hinglish). Marathi is sticky for a session,
+    because a short Marathi answer can look like Hindi."""
+    if not DEVANAGARI.search(text or ""):
+        return "en"
+    if previous == "mr" or MARATHI.search(text):
+        return "mr"
+    return "hi"
+
+
+def _ask(field: str, lang: str) -> str:
+    table = ASK_MR if lang == "mr" else ASK_HI if lang == "hi" else ASK
+    return table.get(field) or ASK.get(field) or f"Could you tell me the {field.replace('_', ' ')}?"
+
+
+# Bank names the model sometimes misses, especially in Devanagari
+BANKS = {"hdfc": "HDFC", "एचडीएफसी": "HDFC", "icici": "ICICI", "आईसीआईसीआई": "ICICI", "sbi": "SBI", "एसबीआई": "SBI",
+         "state bank": "SBI", "स्टेट बैंक": "SBI", "स्टेट बँक": "SBI", "axis": "Axis", "एक्सिस": "Axis", "kotak": "Kotak",
+         "कोटक": "Kotak", "pnb": "PNB", "पीएनबी": "PNB", "bank of baroda": "Bank of Baroda", "बैंक ऑफ बड़ौदा": "Bank of Baroda",
+         "canara": "Canara", "केनरा": "Canara", "yes bank": "Yes Bank", "यस बैंक": "Yes Bank", "idfc": "IDFC First",
+         "union bank": "Union Bank", "यूनियन बैंक": "Union Bank", "paytm payments bank": "Paytm Payments Bank"}
+BANK_RX = re.compile("|".join(sorted(map(re.escape, BANKS), key=len, reverse=True)), re.I)
+
+
+def _required_gate(s: ClaritySession, reply: dict, scenario: str, latest: str = "") -> None:
     """Required details decide clarity, not the model: recover them from the customer's words (clarity.recover_details,
     Hinglish-aware), then conclude when none is missing and ask only for the missing ones otherwise. The model still
     picks the category, flags critical cases and writes the conclusion. Category unknown or "other": left to the model."""
@@ -349,11 +407,20 @@ def _required_gate(s: ClaritySession, reply: dict, scenario: str) -> None:
     if d.account_changed is None:
         d.account_changed = True if ACC_YES.search(scenario) else False if ACC_NO.search(scenario) else None
     _recover_hindi(d, scenario, cat)
+    if d.txn_id is None and cat in ("refund", "payment") and (m := TXN_ANY.search(scenario)):
+        d.txn_id = m.group(0).upper()
+    if cat == "device" and d.device_issue is None and s.entries:
+        d.device_issue = s.entries[0].text[:120]
+    if cat == "kyc" and d.kyc_issue is None and s.entries:
+        d.kyc_issue = s.entries[0].text[:120]
+    if d.bank_name is None and (m := BANK_RX.search(scenario)):
+        d.bank_name = BANKS.get(m.group(0).lower(), BANKS.get(m.group(0), m.group(0)))
     t["details"] = {**t.get("details", {}), **d.model_dump(exclude_none=True)}
     s.draft["details"] = dict(t["details"])
     miss = taxonomy.missing(cat, d)
     if miss:
-        reply["clarification_needed"], reply["clarifications"] = True, [ASK.get(k, f"Could you tell me the {k.replace('_', ' ')}?") for k in miss]
+        lang = s.draft["lang"] = _lang(latest, s.draft.get("lang"))
+        reply["clarification_needed"], reply["clarifications"] = True, [_ask(k, lang) for k in miss]
         reply["conclusion"] = None
     else:
         reply["clarification_needed"], reply["clarifications"] = False, []

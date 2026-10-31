@@ -346,3 +346,41 @@ def test_hindi_details_are_recovered(text, category, expected):
     d = Details()
     clarify._recover_hindi(d, text, category)
     assert d.model_dump(exclude_none=True) == expected
+
+
+@pytest.mark.parametrize("text, category, expected", [
+    ("तीन दिवसांपासून", "device", {"offline_days": 3.0}),
+    ("पाच दिवस", "device", {"offline_days": 5.0}),
+    ("एक आठवड्यापासून", "device", {"offline_days": 7.0}),
+    ("ग्राहकाला 450 रुपयांचा रिफंड करायचा आहे", "refund", {"refund_kind": "new request"}),
+    ("रिफंड अजून मिळाला नाही", "refund", {"refund_kind": "not received"}),
+    ("नाही, मी खाते बदलले नाही", "settlement", {"account_changed": False}),
+    ("मी नवीन खाते जोडले", "settlement", {"account_changed": True}),
+])
+def test_marathi_details_are_recovered(text, category, expected):
+    from mappa.schema import Details
+    d = Details()
+    clarify._recover_hindi(d, text, category)
+    assert d.model_dump(exclude_none=True) == expected
+
+
+@pytest.mark.parametrize("text, previous, expected", [
+    ("मेरा सेटलमेंट नहीं आया", None, "hi"),
+    ("माझे सेटलमेंट आले नाही", None, "mr"),
+    ("8400 रुपये का था", "mr", "mr"),
+    ("settlement nahi aaya", None, "en"),
+])
+def test_reply_language(text, previous, expected):
+    assert clarify._lang(text, previous) == expected
+
+
+def test_questions_come_back_in_the_customers_language():
+    asking = dict(ASKING, ticket={"category": "device", "subject": "soundbox", "details": {"device_issue": "no sound"}})
+    out = clarify.step(_session().id, "साउंडबॉक्स से आवाज़ नहीं आ रही", llm=FakeLLM(asking))
+    assert out["clarifications"] == [clarify.ASK_HI["offline_days"]]
+
+
+def test_devanagari_transaction_id_and_bank_are_recovered(env):
+    done = dict(ASKING, ticket={"category": "refund", "subject": "refund", "details": {"amount": 450}})
+    out = clarify.step(_session().id, "ग्राहकाला 450 रुपयांचा रिफंड करायचा आहे, व्यवहार आयडी T88213 आहे", llm=FakeLLM(done))
+    assert out["status"] == "done" and env[0].details.txn_id == "T88213"
