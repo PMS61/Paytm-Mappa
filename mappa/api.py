@@ -12,12 +12,20 @@
     GET   /api/log                       decisions, verdicts and the learning state
 """
 
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
-from fastapi.staticfiles import StaticFiles
+import logging
+from typing import Literal
 
-from . import autopilot, clarity, feedback, memory, policies, store, taxonomy
-from .schema import Event, Feedback, Ticket, TicketIn, TicketUpdate, now
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field
+
+from . import clarify, feedback, pipeline, policies, sessions, store, taxonomy
+from .sarvam import SarvamError
+from .schema import Event, Feedback, Party, Ticket, TicketIn, TicketUpdate, now
 from .textguard import sanitise
 
 app = FastAPI(title="Paytm support: tickets, clarity, Jev")
@@ -42,25 +50,7 @@ def get_taxonomy():
 
 @app.post("/api/tickets", response_model=Ticket)
 def raise_ticket(body: TicketIn):
-    clean, secret, pii = clarity.sanitise_ticket(body)
-    t = Ticket(**clean.model_dump(), id=store.next_id(), created_at=now(), updated_at=now(),
-               history=[Event(by="customer", status="open", note=f"raised via {body.channel}")])
-    return store.save(process(clarity.run(t, secret, pii)))
-
-
-def process(t: Ticket) -> Ticket:
-    """AI-routed tickets go straight to the autopilot: closed when resolved (awaiting review), else to a human."""
-    if t.status != "ai_queue":
-        return t
-    a = t.autopilot = autopilot.run(t)
-    if a["outcome"] == "resolved":
-        t.status, t.resolution = "closed", a["summary"]
-        t.history.append(Event(by="system", status="closed", note="autopilot resolved it; awaiting support review"))
-    else:
-        t.status = "human_queue"
-        t.clarity.suggestion = memory.suggest(t)
-        t.history.append(Event(by="system", status="human_queue", note=f"autopilot handoff: {a['result']}"))
-    return t
+    return pipeline.raise_ticket(body)
 
 
 @app.get("/api/tickets", response_model=list[Ticket])
@@ -95,7 +85,7 @@ def update_ticket(tid: str, body: TicketUpdate):
         merged = t.details.model_dump() | body.details.model_dump(exclude_none=True)
         t.details = type(t.details)(**merged)
         sig = t.clarity.signals if t.clarity else None
-        t = process(clarity.run(t, sig.secret_removed if sig else False, sig.pii_redacted if sig else 0))
+        t = pipeline.process(clarity.run(t, sig.secret_removed if sig else False, sig.pii_redacted if sig else 0))
     if body.status:
         t.status = body.status
         t.history.append(Event(by=body.by, status=body.status, note=body.note))
@@ -122,6 +112,57 @@ def give_feedback(tid: str, body: Feedback):
 @app.get("/api/policies")
 def search_policies(q: str, category: str | None = None, k: int = 5):
     return policies.tree().search(q, category, k)
+
+
+class ClarityStart(BaseModel):
+    channel: Literal["chatbot", "call"] = "call"
+    raised_by: Party
+    language: str | None = Field(default=None, max_length=8)
+
+
+class ClarityIn(BaseModel):
+    id: str = Field(min_length=1, max_length=20)
+    information: str = Field(min_length=1, max_length=4000)
+
+
+def _clarity_error(status: int, sid: str | None, detail: str) -> JSONResponse:
+    return JSONResponse(status_code=status, content={"id": sid, "detail": detail})
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error(request: Request, exc: RequestValidationError):
+    """Clarity routes answer every error with {"id", "detail"}; other routes keep FastAPI's default body."""
+    if not request.url.path.startswith("/api/clarity"):
+        return await request_validation_exception_handler(request, exc)
+    sid = exc.body.get("id") if isinstance(exc.body, dict) else None
+    errors = [{k: v for k, v in e.items() if k not in ("input", "ctx")} for e in exc.errors()]  # input may hold a secret
+    return JSONResponse(status_code=422, content={"id": sid if isinstance(sid, str) else None,
+                                                  "detail": jsonable_encoder(errors)})
+
+
+
+@app.post("/api/clarity/sessions")
+def start_clarity(body: ClarityStart):
+    return {"id": sessions.create(channel=body.channel, raised_by=body.raised_by, language=body.language).id}
+
+
+@app.post("/api/clarity")
+def clarity_turn(body: ClarityIn):
+    try:
+        return clarify.step(body.id, body.information)
+    except clarify.UnknownSession:
+        return _clarity_error(404, body.id, f"no clarity session {body.id}")
+    except SarvamError as e:
+        return _clarity_error(502, body.id, f"clarity LLM unavailable: {e}")
+    except Exception:
+        logging.getLogger(__name__).exception("clarity turn failed for %s", body.id)
+        return _clarity_error(500, body.id, "internal error")
+
+
+@app.get("/api/clarity/{sid}")
+def get_clarity(sid: str):
+    s = sessions.get(sid)
+    return s if s else _clarity_error(404, sid, f"no clarity session {sid}")
 
 
 @app.get("/api/log")

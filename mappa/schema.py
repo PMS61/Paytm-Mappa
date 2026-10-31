@@ -156,3 +156,27 @@ class TicketUpdate(BaseModel):
     details: Details | None = None
     resolution: str | None = Field(default=None, max_length=2000)
     note: str | None = Field(default=None, max_length=1000)
+
+
+class ClarityEntry(BaseModel):
+    at: datetime = Field(default_factory=now)
+    text: str = Field(max_length=4000)      # sanitised new information, as the channel reported it
+
+
+class ClaritySession(BaseModel):
+    """A clarity session opened by Sarvam (chatbot / voice agent). Information accumulates until the clarity LLM
+    reaches a conclusion (done) or the call cap is hit (escalated); a done session becomes a ticket."""
+    id: str                                  # CLR-xxxxxxxx
+    created_at: datetime
+    updated_at: datetime
+    channel: Literal["chatbot", "call"] = "call"
+    raised_by: Party | None = None
+    language: str | None = Field(default=None, max_length=8)
+    entries: list[ClarityEntry] = []
+    calls: int = 0                           # LLM calls made so far in this session
+    status: Literal["open", "done", "escalated"] = "open"
+    conclusion: str | None = None
+    confidence: float | None = None
+    clarifications: list[str] = []
+    ticket_id: str | None = None
+    escalation_reason: str | None = None   # set when status is escalated

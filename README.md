@@ -137,6 +137,94 @@ and did the resolution work. Each verdict, immediately:
 `python -m mappa.train_jev` also folds all verdicts into the training set. Hard rules never change with feedback.
 The support desk's **Log** tab shows decisions, verdicts, λ̂ and revoked scenarios.
 
+## Sarvam clarity endpoints
+
+Sarvam (chatbot / voice agent) opens a clarity session, sends what the customer says turn by turn, and gets back either
+the questions still missing, a ticket that went through the normal pipeline, or an escalation to a human. The session
+is kept in `data/clarity_sessions.json` (git-ignored). Manual tickets (`POST /api/tickets`) are unchanged and still go
+straight to the ticket pipeline.
+
+```
+POST /api/clarity/sessions  ──► {"id": "CLR-xxxxxxxx"}
+        │
+POST /api/clarity {id, information} ──► clarity LLM (Sarvam) reads the scenario so far + policy clauses
+        │
+        ├─ unclear          ──► needs_clarification  (ask the customer the questions, then call again)
+        ├─ critical         ──► escalate             (human takes over; reason given)
+        ├─ call cap reached ──► escalate             (reason "too many clarity calls")
+        └─ clear            ──► done                 (conclusion saved, ticket raised: clarity.run → Jev → autopilot / human queue)
+```
+
+Each call adds the new information to the session, so the LLM always sees the whole scenario so far. A `done` or
+`escalate` session stops accepting turns: repeating a call returns the same result without calling the LLM.
+
+**Escalation criteria** (checked after every LLM reply; any one escalates, and the deterministic checks win over the
+LLM's own flag):
+
+- the LLM says `critical` (fraud or account takeover signs, money to a third party, legal or law-enforcement threat,
+  threats or safety risk, or an amount of ₹50,000 or more)
+- a human-only policy clause matches the scenario (listed by id in `reason`, e.g. `policy hold P-KYC-05`)
+- the customer's words contain an injection pattern (`injection pattern in the customer's words`). An off-topic
+  request does not escalate
+- an amount in the filed details or in the text is ₹50,000 or more (`amount 60000 at or above the auto ceiling`)
+
+### Requests and responses
+
+Every clarity response, errors included, has an `id`. Errors use `{"id", "detail"}`.
+
+```bash
+# 1. open a session (channel: "chatbot" | "call", default "call")
+curl -s -XPOST localhost:8000/api/clarity/sessions -H 'content-type: application/json' -d '{
+  "channel": "call", "raised_by": {"role": "merchant", "name": "Amal Medicos", "phone": "9876500002", "merchant_id": "M2002"},
+  "language": "hi"}'
+# -> {"id": "CLR-1a2b3c4d"}
+
+# 2. send information (1..4000 characters)
+curl -s -XPOST localhost:8000/api/clarity -H 'content-type: application/json' -d '{
+  "id": "CLR-1a2b3c4d", "information": "mera refund 4000 ka hai"}'
+
+# 3. the session
+curl -s localhost:8000/api/clarity/CLR-1a2b3c4d
+```
+
+**needs_clarification** (LLM is not sure yet; the questions are for the customer):
+
+```json
+{"id": "CLR-1a2b3c4d", "status": "needs_clarification", "done": false,
+ "clarifications": ["Which transaction ID is this refund for?"], "calls": 1, "calls_left": 4}
+```
+
+**done** (no clarification needed; the ticket is in the pipeline, `route` is what Jev decided):
+
+```json
+{"id": "CLR-1a2b3c4d", "status": "done", "done": true, "clarifications": [],
+ "message": "no clarification is needed", "conclusion": "Refund approved under P-REF-01", "confidence": 0.9,
+ "ticket_id": "TKT-000012", "ticket_status": "closed", "route": "AI"}
+```
+
+**escalate** (cap reached, critical, or a deterministic check fired):
+
+```json
+{"id": "CLR-1a2b3c4d", "status": "escalate", "done": false, "reason": "too many clarity calls"}
+{"id": "CLR-1a2b3c4d", "status": "escalate", "done": false, "reason": "policy hold P-KYC-05"}
+```
+
+**errors**: `404` unknown session (`{"id": "CLR-…", "detail": "no clarity session CLR-…"}`), `502` clarity LLM
+unavailable (`{"id": "CLR-…", "detail": "clarity LLM unavailable: …"}`), `422` invalid body (`{"id": … or null, "detail": [...]}`).
+
+A `done` session also lists its ticket at `GET /api/tickets/{ticket_id}`, and `ticket_status` / `route` tell you where it went.
+
+### Configuration
+
+| env | default | meaning |
+|---|---|---|
+| `SARVAM_API_KEY` | (required) | Sarvam key. Missing → 502 on every turn |
+| `SARVAM_MODEL` | `sarvam-105b` | chat model |
+| `MAPPA_CLARITY_MAX_CALLS` | `5` | LLM calls per session; the next turn escalates |
+| `MAPPA_SESSIONS` | `data/clarity_sessions.json` | session store (its lock is `<path>.lock`) |
+
+Sarvam is called with `POST https://api.sarvam.ai/v1/chat/completions` (30 s timeout, JSON mode). Tests never call it.
+
 ## Benchmarks
 
 `results/jev.json`, reproduced by `python -m mappa.train_jev`. More, with the findings behind the design:
@@ -265,4 +353,6 @@ mappa/policies.py     policy RAG (ALPHA)     mappa/memory.py     suggestions    
 mappa/autopilot.py    MCP client + playbooks mappa/paytm_mcp.py  Paytm actions (dummy) mappa/mcp_server.py support tools
 mappa/textguard.py    secrets, PII, injection mappa/store.py     local JSON store     mappa/api.py        HTTP + pages
 web/                  the two pages          policies/           policy documents     data/jev_tickets.jsonl  training data
+mappa/sarvam.py       Sarvam chat client    mappa/sessions.py   clarity sessions      mappa/clarify.py    clarity turns (Sarvam)
+mappa/pipeline.py     ticket path (raise, process)
 ```

@@ -43,4 +43,6 @@ __pycache__/
 data/tickets.json
 data/feedback.jsonl
 data/learning.json
+data/clarity_sessions.json
+data/clarity_sessions.json.lock
 models/
